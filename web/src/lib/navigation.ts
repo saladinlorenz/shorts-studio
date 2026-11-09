@@ -10,6 +10,7 @@ import {
   PenTool,
   Settings as SettingsIcon,
   Sparkles,
+  Volume2,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -48,6 +49,18 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Design",
         icon: PenTool,
         description: "Éditeur : scènes, calques, effets, aperçu Remotion, export MP4",
+      },
+    ],
+  },
+  {
+    id: "creation",
+    label: "Création",
+    items: [
+      {
+        to: "/tts",
+        label: "Voix off",
+        icon: Volume2,
+        description: "Synthèse vocale locale : texte → WAV, catalogue multilingue Piper et Kokoro",
       },
     ],
   },

@@ -20,6 +20,7 @@ individuelles ne sont pas affirmées ici : la provenance du media les note
 """
 from __future__ import annotations
 
+import json
 import math
 import wave
 from pathlib import Path
@@ -47,51 +48,209 @@ def _piper_voice(engine_voice: str, lang_family: str, lang_code: str,
     ]
 
 
-# Catalogue restreint et verifie : le francais d'abord (utilisateur francophone),
-# puis l'anglais pour l'ouverture multilingue. Chaque entree porte les fichiers a
-# telecharger ; les voix Kokoro partagent le meme modele (un seul download).
-VOICES: list[dict] = [
+# --- Catalogue complet --------------------------------------------------------
+# Piper publie la liste integrale de ses voix (53 langues, 180 voix) dans
+# ``voices.json`` : un snapshot est versionne dans le depot, donc le catalogue
+# est complet SANS aucune requete reseau au demarrage. Kokoro partage un seul
+# modele pour ses 54 voix, listees ici.
+_PIPER_SNAPSHOT = Path(__file__).with_name("piper_voices.json")
+
+# Noms de langues en francais (affichage). Repli : le nom anglais du snapshot.
+_LANG_FR = {
+    "ar": "arabe", "bg": "bulgare", "bn": "bengali", "ca": "catalan",
+    "cs": "tchèque", "cy": "gallois", "da": "danois", "de": "allemand",
+    "el": "grec", "en": "anglais", "es": "espagnol", "et": "estonien",
+    "eu": "basque", "fa": "persan", "fi": "finnois", "fr": "français",
+    "he": "hébreu", "hi": "hindi", "hu": "hongrois", "hy": "arménien",
+    "id": "indonésien", "is": "islandais", "it": "italien", "ja": "japonais",
+    "ka": "géorgien", "kk": "kazakh", "ko": "coréen", "ku": "kurde",
+    "lb": "luxembourgeois", "lt": "lituanien", "lv": "letton",
+    "ml": "malayalam", "mr": "marathi", "ne": "népalais", "nl": "néerlandais",
+    "no": "norvégien", "pl": "polonais", "pt": "portugais", "ro": "roumain",
+    "ru": "russe", "sk": "slovaque", "sl": "slovène", "sq": "albanais",
+    "sr": "serbe", "sv": "suédois", "sw": "swahili", "te": "télougou",
+    "th": "thaï", "tr": "turc", "uk": "ukrainien", "ur": "ourdou",
+    "vi": "vietnamien", "zh": "chinois",
+}
+
+# Ids deja publies par l'API et utilises par le frontend / les tests : on les
+# conserve pour que rien ne casse en passant du catalogue restreint au complet.
+_LEGACY_IDS = {
+    "fr_FR-siwis-medium": "piper-fr-siwis",
+    "fr_FR-tom-medium": "piper-fr-tom",
+    "en_US-lessac-medium": "piper-en-lessac",
+    "en_US-ryan-medium": "piper-en-ryan",
+    "ff_siwis": "kokoro-fr-siwis",
+    "af_heart": "kokoro-en-heart",
+    "am_michael": "kokoro-en-michael",
+    "bf_emma": "kokoro-en-emma",
+}
+_LEGACY_GENDER = {
+    "piper-fr-siwis": "female", "piper-fr-tom": "male",
+    "piper-en-lessac": "female", "piper-en-ryan": "male",
+    "kokoro-fr-siwis": "female", "kokoro-en-heart": "female",
+    "kokoro-en-michael": "male", "kokoro-en-emma": "female",
+}
+
+# Voix Kokoro (release model-files-v1.1) : prefixe -> langue, genre, code,
+# nom francais. Source : VOICES.md de hexgrad/Kokoro-82M.
+_KOKORO_PREFIX = {
+    "af": ("en", "female", "en-us", "anglais US"),
+    "am": ("en", "male", "en-us", "anglais US"),
+    "bf": ("en", "female", "en-gb", "anglais UK"),
+    "bm": ("en", "male", "en-gb", "anglais UK"),
+    "ef": ("es", "female", "es", "espagnol"),
+    "em": ("es", "male", "es", "espagnol"),
+    "ff": ("fr", "female", "fr-fr", "français"),
+    "hf": ("hi", "female", "hi", "hindi"),
+    "hm": ("hi", "male", "hi", "hindi"),
+    "if": ("it", "female", "it", "italien"),
+    "im": ("it", "male", "it", "italien"),
+    "jf": ("ja", "female", "ja", "japonais"),
+    "jm": ("ja", "male", "ja", "japonais"),
+    "pf": ("pt", "female", "pt-br", "portugais BR"),
+    "pm": ("pt", "male", "pt-br", "portugais BR"),
+    "zf": ("zh", "female", "zh", "mandarin"),
+    "zm": ("zh", "male", "zh", "mandarin"),
+}
+_KOKORO_NAMES = (
+    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore",
+    "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael",
+    "am_onyx", "am_puck", "am_santa",
+    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+    "ef_dora", "em_alex", "em_santa", "ff_siwis",
+    "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
+    "if_sara", "im_nicola",
+    "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro", "jm_kumo",
+    "pf_dora", "pm_alex", "pm_santa",
+    "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
+    "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang",
+)
+
+
+def _piper_files(entry: dict) -> list[dict]:
+    """Fichiers telechargeables d'une entree du snapshot (sans MODEL_CARD)."""
+    files = []
+    for path, meta in (entry.get("files") or {}).items():
+        if not path.endswith((".onnx", ".onnx.json")):
+            continue
+        files.append({
+            "url": f"{_HF}/{path}?download=true",
+            "filename": Path(path).name,
+            "size_bytes": int((meta or {}).get("size_bytes") or 0),
+        })
+    return files
+
+
+def _piper_voices() -> list[dict]:
+    """Catalogue Piper complet lu dans le snapshot local (aucun reseau)."""
+    try:
+        raw = json.loads(_PIPER_SNAPSHOT.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return []
+    voices = []
+    for key, entry in sorted(raw.items()):
+        if not isinstance(entry, dict):
+            continue
+        files = _piper_files(entry)
+        if not files:
+            continue
+        lang = entry.get("language") or {}
+        family = str(lang.get("family") or key.split("_")[0]).lower()
+        locale = str(lang.get("code") or "")
+        name = str(entry.get("name") or key)
+        quality = str(entry.get("quality") or "")
+        voice_id = _LEGACY_IDS.get(key, f"piper-{key}")
+        language_name = _LANG_FR.get(
+            family, str(lang.get("name_english") or family)
+        )
+        voices.append({
+            "id": voice_id,
+            "engine": "piper",
+            "label": f"{name} · {language_name} ({locale}) · {quality}",
+            "language": family,
+            "gender": _LEGACY_GENDER.get(voice_id, ""),
+            "engine_voice": key,
+            "lang_code": "",
+            "locale": locale,
+            "quality": quality,
+            "language_name": language_name,
+            "files": files,
+            "size_bytes": sum(f["size_bytes"] for f in files),
+        })
+    return voices
+
+
+def _kokoro_voices() -> list[dict]:
+    voices = []
+    for full in _KOKORO_NAMES:
+        prefix, _, name = full.partition("_")
+        meta = _KOKORO_PREFIX.get(prefix)
+        if meta is None:
+            continue
+        family, gender, lang_code, language_name = meta
+        voice_id = _LEGACY_IDS.get(full, f"kokoro-{full}")
+        voices.append({
+            "id": voice_id,
+            "engine": "kokoro",
+            "label": f"{name} · {language_name} ({lang_code})",
+            "language": family,
+            "gender": _LEGACY_GENDER.get(voice_id, gender),
+            "engine_voice": full,
+            "lang_code": lang_code,
+            "locale": "",
+            "quality": "",
+            "language_name": language_name,
+            "files": _KOKORO_FILES,
+            "size_bytes": 0,  # modele partage : voir _approx_mb
+        })
+    return voices
+
+
+# Repli si le snapshot piper_voices.json est absent : les quatre voix
+# historiquement verifiees, pour ne jamais laisser l'app sans catalogue.
+_FALLBACK_PIPER = [
     {
-        "id": "piper-fr-siwis", "engine": "piper", "label": "Siwis · français (femme)",
+        "id": "piper-fr-siwis", "engine": "piper",
+        "label": "Siwis · français (fr_FR) · medium",
         "language": "fr", "gender": "female", "engine_voice": "fr_FR-siwis-medium",
-        "lang_code": "", "files": _piper_voice("fr_FR-siwis-medium", "fr", "fr_FR", "siwis", "medium"),
+        "lang_code": "", "locale": "fr_FR", "quality": "medium",
+        "language_name": "français",
+        "files": _piper_voice("fr_FR-siwis-medium", "fr", "fr_FR", "siwis", "medium"),
+        "size_bytes": 63_000_000,
     },
     {
-        "id": "piper-fr-tom", "engine": "piper", "label": "Tom · français (homme)",
+        "id": "piper-fr-tom", "engine": "piper",
+        "label": "Tom · français (fr_FR) · medium",
         "language": "fr", "gender": "male", "engine_voice": "fr_FR-tom-medium",
-        "lang_code": "", "files": _piper_voice("fr_FR-tom-medium", "fr", "fr_FR", "tom", "medium"),
+        "lang_code": "", "locale": "fr_FR", "quality": "medium",
+        "language_name": "français",
+        "files": _piper_voice("fr_FR-tom-medium", "fr", "fr_FR", "tom", "medium"),
+        "size_bytes": 63_000_000,
     },
     {
-        "id": "piper-en-lessac", "engine": "piper", "label": "Lessac · anglais (femme)",
+        "id": "piper-en-lessac", "engine": "piper",
+        "label": "Lessac · anglais (en_US) · medium",
         "language": "en", "gender": "female", "engine_voice": "en_US-lessac-medium",
-        "lang_code": "", "files": _piper_voice("en_US-lessac-medium", "en", "en_US", "lessac", "medium"),
+        "lang_code": "", "locale": "en_US", "quality": "medium",
+        "language_name": "anglais",
+        "files": _piper_voice("en_US-lessac-medium", "en", "en_US", "lessac", "medium"),
+        "size_bytes": 63_000_000,
     },
     {
-        "id": "piper-en-ryan", "engine": "piper", "label": "Ryan · anglais (homme)",
+        "id": "piper-en-ryan", "engine": "piper",
+        "label": "Ryan · anglais (en_US) · medium",
         "language": "en", "gender": "male", "engine_voice": "en_US-ryan-medium",
-        "lang_code": "", "files": _piper_voice("en_US-ryan-medium", "en", "en_US", "ryan", "medium"),
-    },
-    {
-        "id": "kokoro-fr-siwis", "engine": "kokoro", "label": "Siwis · français (femme)",
-        "language": "fr", "gender": "female", "engine_voice": "ff_siwis",
-        "lang_code": "fr-fr", "files": _KOKORO_FILES,
-    },
-    {
-        "id": "kokoro-en-heart", "engine": "kokoro", "label": "Heart · anglais US (femme)",
-        "language": "en", "gender": "female", "engine_voice": "af_heart",
-        "lang_code": "en-us", "files": _KOKORO_FILES,
-    },
-    {
-        "id": "kokoro-en-michael", "engine": "kokoro", "label": "Michael · anglais US (homme)",
-        "language": "en", "gender": "male", "engine_voice": "am_michael",
-        "lang_code": "en-us", "files": _KOKORO_FILES,
-    },
-    {
-        "id": "kokoro-en-emma", "engine": "kokoro", "label": "Emma · anglais UK (femme)",
-        "language": "en", "gender": "female", "engine_voice": "bf_emma",
-        "lang_code": "en-gb", "files": _KOKORO_FILES,
+        "lang_code": "", "locale": "en_US", "quality": "medium",
+        "language_name": "anglais",
+        "files": _piper_voice("en_US-ryan-medium", "en", "en_US", "ryan", "medium"),
+        "size_bytes": 63_000_000,
     },
 ]
+
+VOICES: list[dict] = (_piper_voices() or _FALLBACK_PIPER) + _kokoro_voices()
 
 
 class TtsError(RuntimeError):
@@ -140,16 +299,24 @@ def status(models_dir: Path) -> dict:
         voices.append({
             "id": voice["id"], "engine": voice["engine"], "label": voice["label"],
             "language": voice["language"], "gender": voice["gender"],
+            "language_name": voice.get("language_name") or voice["language"],
+            "locale": voice.get("locale") or "",
+            "quality": voice.get("quality") or "",
             "downloaded": downloaded,
             "ready": bool(engine["available"] and downloaded),
             "approx_mb": _approx_mb(voice),
         })
+    voices.sort(key=lambda v: (v["language_name"].lower(), v["label"].lower()))
     return {"engines": engines, "voices": voices}
 
 
 def _approx_mb(voice: dict) -> int:
+    """Taille annoncee : somme reelle des fichiers, sauf modele Kokoro partage."""
     if voice["engine"] == "kokoro":
         return 330  # modele + voix partages
+    total = sum(int(f.get("size_bytes") or 0) for f in voice.get("files") or [])
+    if total:
+        return max(1, round(total / (1024 * 1024)))
     return 60  # voix Piper medium (.onnx + config)
 
 

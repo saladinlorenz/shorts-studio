@@ -1097,6 +1097,12 @@ export interface TtsVoice {
   label: string;
   language: string;
   gender: string;
+  /** Nom de la langue en français, pour le regroupement de l'affichage. */
+  language_name: string;
+  /** Locale Piper (fr_FR, ar_JO…) ; vide pour Kokoro. */
+  locale: string;
+  /** Qualité Piper (low / medium / high) ; vide pour Kokoro. */
+  quality: string;
   downloaded: boolean;
   ready: boolean;
   approx_mb: number;

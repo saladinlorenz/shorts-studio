@@ -16,6 +16,7 @@ import ClipsPage from "./pages/ClipsPage";
 import PodcastPage from "./pages/PodcastPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import SettingsPage from "./pages/SettingsPage";
+import TtsPage from "./pages/TtsPage";
 
 /**
  * Coquille du studio.
@@ -123,6 +124,7 @@ function Shell() {
           <Route path="/short-videos" element={<ShortVideosPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/tts" element={<TtsPage />} />
           <Route path="*" element={<CockpitPage />} />
         </Routes>
       </main>

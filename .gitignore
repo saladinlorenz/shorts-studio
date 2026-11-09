@@ -21,6 +21,8 @@ web/node_modules/
 web/dist/
 web/build/
 web/.vite/
+# cache média généré par le frontend (copie de media/)
+web/public/media-cache/
 *.tsbuildinfo
 
 # --- Réglages et clés API (NE JAMAIS être poussés) --------------------

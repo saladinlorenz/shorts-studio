@@ -22,6 +22,7 @@ import {
 import { cssFamily, FONT_FAMILIES } from "../../remotion/fonts";
 import { cancelJob, useJobPolling } from "../../lib/jobs";
 import { ErrorNote, JobStatus } from "../../components/job-status";
+import { VoiceSelect } from "../../components/VoiceSelect";
 import type { TextFit } from "./measure";
 import { durations, layerById, sceneById, type Selection } from "./edit";
 
@@ -781,14 +782,7 @@ function VoiceOverSection({
         <TextInput multiline value={text} onChange={setText} placeholder="Bonjour, voici une voix off…" />
       </Field>
       <Field label="voix">
-        <select className="input-base" value={voiceId} onChange={(e) => setVoiceId(e.target.value)}>
-          {voices.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.label}
-              {v.downloaded ? "" : ` · à télécharger (~${v.approx_mb} Mo)`}
-            </option>
-          ))}
-        </select>
+        <VoiceSelect voices={voices} value={voiceId} onChange={setVoiceId} />
       </Field>
       <Slider
         label="vitesse"
