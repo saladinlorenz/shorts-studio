@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "updated": "2026-11-02",
+  "note": "Source unique des polices utilisables dans le studio. Les fichiers sont servis depuis web/public/fonts/ par le meme chemin pour le Player et pour le rendu Remotion. Aucune police systeme Windows n'est utilisee : la licence doit autoriser l'embarquement et la redistribution.",
+  "families": [
+    {
+      "id": "inter",
+      "css_family": "Inter",
+      "label": "Inter — linéale neutre (UI, corps)",
+      "role": "sans",
+      "license": "SIL Open Font License 1.1",
+      "license_file": "web/public/fonts/licenses/inter/OFL.txt",
+      "source": "https://fonts.google.com/specimen/Inter",
+      "retrieved": "2026-11-02",
+      "weights": [
+        { "weight": 400, "style": "normal", "file": "Inter-400.ttf" },
+        { "weight": 700, "style": "normal", "file": "Inter-700.ttf" },
+        { "weight": 900, "style": "normal", "file": "Inter-900.ttf" }
+      ]
+    },
+    {
+      "id": "playfair-display",
+      "css_family": "Playfair Display",
+      "label": "Playfair Display — sérif contrasté (citation)",
+      "role": "serif",
+      "license": "SIL Open Font License 1.1",
+      "license_file": "web/public/fonts/licenses/playfairdisplay/OFL.txt",
+      "source": "https://fonts.google.com/specimen/Playfair+Display",
+      "retrieved": "2026-11-02",
+      "weights": [
+        { "weight": 400, "style": "normal", "file": "Playfair_Display-400.ttf" },
+        { "weight": 700, "style": "normal", "file": "Playfair_Display-700.ttf" },
+        { "weight": 900, "style": "normal", "file": "Playfair_Display-900.ttf" }
+      ]
+    },
+    {
+      "id": "anton",
+      "css_family": "Anton",
+      "label": "Anton — titrage condensé (accroche)",
+      "role": "display",
+      "license": "SIL Open Font License 1.1",
+      "license_file": "web/public/fonts/licenses/anton/OFL.txt",
+      "source": "https://fonts.google.com/specimen/Anton",
+      "retrieved": "2026-11-02",
+      "weights": [{ "weight": 400, "style": "normal", "file": "Anton-400.ttf" }]
+    },
+    {
+      "id": "archivo-black",
+      "css_family": "Archivo Black",
+      "label": "Archivo Black — graisse extrême (révélation)",
+      "role": "display",
+      "license": "SIL Open Font License 1.1",
+      "license_file": "web/public/fonts/licenses/archivoblack/OFL.txt",
+      "source": "https://fonts.google.com/specimen/Archivo+Black",
+      "retrieved": "2026-11-02",
+      "weights": [{ "weight": 400, "style": "normal", "file": "Archivo_Black-400.ttf" }]
+    },
+    {
+      "id": "space-grotesk",
+      "css_family": "Space Grotesk",
+      "label": "Space Grotesk — linéale technique (marque)",
+      "role": "sans",
+      "license": "SIL Open Font License 1.1",
+      "license_file": "web/public/fonts/licenses/spacegrotesk/OFL.txt",
+      "source": "https://fonts.google.com/specimen/Space+Grotesk",
+      "retrieved": "2026-11-02",
+      "weights": [
+        { "weight": 500, "style": "normal", "file": "Space_Grotesk-500.ttf" },
+        { "weight": 700, "style": "normal", "file": "Space_Grotesk-700.ttf" }
+      ]
+    }
+  ]
+}

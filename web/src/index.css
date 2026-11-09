@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-size: 14px;
+  }
+
+  * {
+    border-color: hsl(215 18% 20%);
+  }
+}
+
+@layer components {
+  /* Panneau : bordure nette, pas de dégradé décoratif. */
+  .panel {
+    @apply rounded-lg border border-border bg-card;
+  }
+
+  .panel-title {
+    @apply text-[11px] font-semibold uppercase tracking-wider text-muted-foreground;
+  }
+
+  .field-label {
+    @apply text-xs font-medium text-muted-foreground;
+  }
+
+  .input-base {
+    @apply w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm
+      text-foreground placeholder:text-muted-foreground
+      focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+}
+
+/* Scrollbar sobre (thème sombre). */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(215 16% 25%);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(215 16% 32%);
+}

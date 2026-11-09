@@ -1,0 +1,69 @@
+# =====================================================================
+#  shorts-studio — youtube_clipper
+#  Règle : on versionne le CODE, pas les données ni les artefacts.
+#  Tout ce qui est régénérable (frontend, modèles, médias) ou privé
+#  (clés API, lots, bases locales) reste hors du dépôt.
+# =====================================================================
+
+# --- Python -----------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.pytest_tmp/
+.coverage
+htmlcov/
+
+# --- Frontend (web/) --------------------------------------------------
+web/node_modules/
+web/dist/
+web/build/
+web/.vite/
+*.tsbuildinfo
+
+# --- Réglages et clés API (NE JAMAIS être poussés) --------------------
+server/settings.json
+*.env
+.env.*
+
+# --- Bases et files locales -------------------------------------------
+*.sqlite3
+*.db
+*.sqlite
+
+# --- Données générées / contenus de l'utilisateur ---------------------
+batch/
+projects/
+podcast_db/
+knowledge/
+media/
+exports/
+clips/
+downloads/
+moments/
+models/
+tts_models/
+shorts/
+
+# --- Sorties et journaux ----------------------------------------------
+*.log
+logs/
+*.mp4
+*.wav
+*.mp3
+*.webm
+*.csv
+!**/fixtures/**/*.csv
+
+# --- Sauvegardes / archives locales -----------------------------------
+*_backup*/
+_sauvegarde_*/
+*.bak
+*.zip
+
+# --- Système ----------------------------------------------------------
+Thumbs.db
+desktop.ini
+.DS_Store

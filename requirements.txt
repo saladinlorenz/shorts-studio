@@ -1,0 +1,23 @@
+# Onglet Short Videos + serveur web local (toutes libres / usage OK)
+# Pillow : MIT-CMU · opencv-python : Apache-2.0 · imageio-ffmpeg : BSD-2-Clause
+# (binaire FFmpeg GPLv3 embarqué - usage local, pas de redistribution)
+yt-dlp>=2024.0.0
+groq>=0.4.0
+opencv-python>=4.8.0
+imageio-ffmpeg>=0.4.0
+Pillow>=10.0.0
+
+# Serveur web local (server/)
+fastapi>=0.115.0
+uvicorn>=0.30.0
+python-multipart>=0.0.9
+httpx>=0.27.0
+
+# Synthese vocale locale (shortvideos/tts.py) — moteurs libres, modeles telecharges
+# au clic seulement. piper-tts : code GPL-3.0 (espeak-ng embarque) · kokoro-onnx :
+# code MIT, modele Apache-2.0. Usage local, pas de redistribution.
+piper-tts>=1.8.0
+kokoro-onnx>=0.6.0
+
+# Tests (tests/)
+pytest>=8.0.0
