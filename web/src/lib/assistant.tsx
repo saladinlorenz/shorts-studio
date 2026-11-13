@@ -32,6 +32,8 @@ export type AssistantData = {
 /** Ce que la page accepte de recevoir en retour. */
 export type AssistantHandlers = {
   onApply?: (candidate: Project) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
   onLibrarySave?: (candidate: Project, label: string, description: string) => void;
   onBatchPlan?: (batch: NonNullable<Proposal["batch"]>) => void;
   notify?: (message: string, kind?: "ok" | "error" | "info") => void;

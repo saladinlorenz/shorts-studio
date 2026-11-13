@@ -87,9 +87,33 @@ def _models() -> list[dict]:
     return out
 
 
+def _template_structure(project: dict) -> list[dict]:
+    """Identifiants ciblables sans copier les textes de démonstration."""
+    out = []
+    for scene in project.get("content", {}).get("scenes", []):
+        out.append(
+            {
+                "scene": scene.get("id"),
+                "label": scene.get("label", ""),
+                "duration": scene.get("duration"),
+                "layers": [
+                    {"id": layer.get("id"), "role": layer.get("role", ""), "type": layer.get("type"),
+                     "hidden": bool(layer.get("hidden"))}
+                    for layer in scene.get("layers", [])
+                    if isinstance(layer, dict)
+                ],
+            }
+        )
+    return out
+
+
 def _templates() -> list[dict]:
     out = []
     for item in library_mod.list_library():
+        try:
+            structure = _template_structure(library_mod.get_project(item["id"]))
+        except Exception:  # noqa: BLE001 - modèle illisible : pas de structure, jamais fatal
+            structure = []
         out.append(
             {
                 "id": item["id"],
@@ -101,6 +125,7 @@ def _templates() -> list[dict]:
                 "duration": item.get("duration"),
                 "size": f"{item.get('width')}x{item.get('height')}",
                 "fps": item.get("fps"),
+                "structure": structure,
             }
         )
     return out
@@ -172,6 +197,8 @@ def build() -> dict:
             "easings": list(schema.EASINGS),
             "background_fit": list(schema.BACKGROUND_FIT),
             "background_animation": list(schema.BACKGROUND_ANIM),
+            "transition_types": list(schema.TRANSITION_TYPES),
+            "transition_frames_max": schema.TRANSITION_FRAMES_MAX,
             "alignments": list(schema.ALIGNMENTS),
             "directions": list(schema.DIRECTIONS),
             "scene_duration_range": [schema.SCENE_DURATION_MIN, schema.SCENE_DURATION_MAX],
@@ -240,9 +267,10 @@ def _not_available(deps: dict | None = None) -> list[str]:
         "Les effets des paquets @remotion/* non installés (filtres GPU, transitions, "
         "3D réelle avec @remotion/three, sous-titres automatiques, Lottie, GIF, Player avancé) : "
         "la documentation les décrit mais le renderer ne les implémente pas.",
-        "L'écriture d'une nouvelle composition Remotion en code : mode avancé non livré.",
-        "La compréhension du contenu visuel ou sonore d'un média : aucune capacité "
-        "de vision ni d'annotation automatique.",
+        "L'écriture et l'exécution de nouveau code React/Remotion : pas de bac à sable livré. "
+        "Les compositions nouvelles se créent en JSON v2 validé, avec les calques et effets existants.",
+        "La vision : aucun modèle visuel requis ni image envoyée. project_review mesure le DOM et les "
+        "logs sur quelques frames, propose des corrections et recontrôle techniquement ; un humain vérifie les aperçus.",
         "Le choix d'un chemin disque, l'installation d'une dépendance, la suppression "
         "d'un fichier ou le lancement d'un lot sans validation humaine.",
     ]
@@ -321,6 +349,11 @@ def _prompt_lines(manifest: dict, max_chars: int = 6000) -> list[str]:
         f"- Fond d'une scène : fit {', '.join(fmt['background_fit'])}, animation "
         f"{', '.join(fmt['background_animation'])}."
     )
+    lines.append(
+        f"- Transition d'entrée d'une scène (set_scene) : transition.type "
+        f"{', '.join(fmt['transition_types'])} ; transition.frames 0-{fmt['transition_frames_max']} "
+        "(12-20 conseillé, 1re scène : none). Chevauchement au rendu, chronologie inchangée."
+    )
     lo, hi = fmt["scene_duration_range"]
     tlo, thi = fmt["total_duration_range"]
     lines.append(f"- Durée : scène entre {lo} et {hi} s, total entre {tlo} et {thi} s (12-15 s conseillé).")
@@ -334,6 +367,7 @@ def _prompt_lines(manifest: dict, max_chars: int = 6000) -> list[str]:
     )
     lines.append(f"- Polices du catalogue sous licence : {fonts}.")
     lines.extend(_effects_lines(manifest["effects"]))
+    lines.extend(_director_craft_lines(compact=True))
     templates = "; ".join(
         f"{t['id']}=« {t['label']} », {t['scenes']} scènes/{t['duration']} s"
         for t in manifest["templates"]
@@ -405,6 +439,7 @@ def compact_prompt_block(manifest: dict | None = None, max_chars: int = 1500) ->
         f" · unite : {', '.join(fmt['animation_units'])} · courbe : {', '.join(fmt['easings'])}",
         f"fond : fit {', '.join(fmt['background_fit'])} · animation {', '.join(fmt['background_animation'])}"
         f" · alignement {', '.join(fmt['alignments'])} · direction {', '.join(fmt['directions'])}",
+        f"transition set_scene : transition.type {', '.join(fmt['transition_types'])} · frames 0-{fmt['transition_frames_max']}",
         f"duree : scene {scene_lo}-{scene_hi} s, total {total_lo}-{total_hi} s · temps en FRAMES",
         f"media : {fmt['media_references']} · bloc « resolved » : refusé",
         "polices : " + ", ".join(
@@ -448,6 +483,163 @@ def prompt_block(manifest: dict | None = None, max_chars: int = 6000) -> str:
 def production_prompt_block(manifest: dict | None = None) -> str:
     manifest = manifest or build()
     return "\n".join(_prompt_lines_production(manifest))
+
+
+AUTOPILOT_EXAMPLES = [
+    {
+        "prompt": "Vidéo motivante pour oser commencer, sans voix.",
+        "plan": {
+            "type": "autopilot_plan", "summary": "Récit du doute à l'action, lettres cinétiques, étalonnage chaud.",
+            "template_id": "recit-cinematique",
+            "script": [
+                {"scene_id": "s1", "layer_id": "title", "text": "Et si tu osais ?"},
+                {"scene_id": "s1", "layer_id": "subtitle", "text": "Tout commence ici."},
+                {"scene_id": "s2", "layer_id": "title", "text": "Tu attends le bon moment."},
+                {"scene_id": "s2", "layer_id": "subtitle", "text": "Demain ressemble à hier."},
+                {"scene_id": "s3", "layer_id": "title", "text": "Le doute grandit."},
+                {"scene_id": "s3", "layer_id": "subtitle", "text": "L'envie reste là."},
+                {"scene_id": "s4", "layer_id": "title", "text": "Fais un premier pas."},
+                {"scene_id": "s4", "layer_id": "subtitle", "text": "Petit, mais réel."},
+                {"scene_id": "s5", "layer_id": "title", "text": "Commence aujourd'hui."},
+                {"scene_id": "s5", "layer_id": "subtitle", "text": "La suite t'appartient."},
+            ],
+            "design": [
+                {"op": "set_theme", "path": "accent_color", "value": "#E8B46A"},
+                {"op": "set_effects", "scene_id": "s1", "layer_id": "title", "effects": ["kinetic_letters"]},
+                {"op": "set_effects", "scene_id": "s5",
+                 "effects": [{"id": "color_grade", "params": {"look": "teal_orange"}}]},
+            ],
+            "voice": None, "export": {"name": "oser"},
+        },
+    },
+    {
+        "prompt": "Présente mon carnet sobrement, sans médias ni voix.",
+        "plan": {
+            "type": "autopilot_plan", "summary": "Présentation épurée, entrée lettrée douce, sépia léger.",
+            "template_id": "showcase-cinematique",
+            "script": [
+                {"scene_id": "s1", "layer_id": "title", "text": "Une place pour vos idées."},
+                {"scene_id": "s1", "layer_id": "subtitle", "text": "Votre carnet."},
+                {"scene_id": "s2", "layer_id": "title", "text": "Une page. Une envie."},
+                {"scene_id": "s2", "layer_id": "subtitle", "text": "Notez ce qui vous inspire."},
+                {"scene_id": "s3", "layer_id": "title", "text": "Faites le premier trait."},
+                {"scene_id": "s3", "layer_id": "subtitle", "text": "Les idées prennent forme."},
+                {"scene_id": "s4", "layer_id": "title", "text": "À vous d'écrire."},
+                {"scene_id": "s4", "layer_id": "subtitle", "text": "Découvrez le carnet."},
+            ],
+            "design": [
+                {"op": "set_theme", "path": "accent_color", "value": "#C9A227"},
+                {"op": "set_effects", "scene_id": "s1", "layer_id": "title", "effects": ["kinetic_letters"]},
+                {"op": "set_effects", "scene_id": "s4",
+                 "effects": [{"id": "color_grade", "params": {"look": "sepia"}}]},
+            ],
+            "voice": None, "export": {"name": "carnet"},
+        },
+    },
+    {
+        "prompt": "Citation percutante sur le courage, style énergique, sans voix.",
+        "plan": {
+            "type": "autopilot_plan", "summary": "Citation choc : lettres cinétiques, emphase, étalonnage froid.",
+            "template_id": "citation-cinematique",
+            "script": [
+                {"scene_id": "s1", "layer_id": "hook", "text": "Le courage n'est pas l'absence de peur"},
+                {"scene_id": "s1", "layer_id": "hook-caption", "text": "mindset"},
+                {"scene_id": "s2", "layer_id": "quote", "text": "C'est décider de continuer malgré elle."},
+                {"scene_id": "s2", "layer_id": "author", "text": "— Anonyme"},
+                {"scene_id": "s3", "layer_id": "reveal", "text": "Agir"},
+                {"scene_id": "s3", "layer_id": "reveal-note", "text": "Passe à l'action aujourd'hui"},
+            ],
+            "design": [
+                {"op": "set_theme", "path": "accent_color", "value": "#2B6CE6"},
+                {"op": "set_effects", "scene_id": "s1", "layer_id": "hook", "effects": ["kinetic_letters"]},
+                {"op": "set_layer", "scene_id": "s2", "layer_id": "quote", "path": "emphasis", "value": ["continuer"]},
+                {"op": "set_effects", "scene_id": "s3",
+                 "effects": [{"id": "color_grade", "params": {"look": "bleute"}}]},
+            ],
+            "voice": None, "export": {"name": "courage"},
+        },
+    },
+]
+
+
+def structure_lines(templates: list[dict], *, detailed: bool = True) -> list[str]:
+    lines = []
+    for template in templates:
+        scenes = []
+        for scene in template.get("structure", []):
+            layers = ",".join(
+                f"{layer['id']}:{layer['type']}" + ("(masqué)" if layer.get("hidden") else "")
+                for layer in scene.get("layers", [])
+            )
+            scenes.append(f"{scene['scene']} {scene['label']} {scene['duration']}s [{layers}]")
+        description = f" {template.get('description', '')}" if detailed else ""
+        lines.append(f"{template['id']}:{description} " + ("; ".join(scenes) or "get_template requis"))
+    return lines
+
+
+def autopilot_grounding(manifest: dict | None = None, *, compact: bool = False) -> str:
+    manifest = manifest or build()
+    lines = ["GUIDE AUTOPILOTE — catalogue réel, choisir selon l'intention, pas toujours une citation."]
+    lines.extend(structure_lines(manifest["templates"], detailed=False))
+    lines.append("EFFETS (id:portée/cible ; réglages exacts via list_effects, défauts si params absent) :")
+    for effect in manifest["effects"]["effects"]:
+        lines.append(f"{effect['id']}:{'/'.join(effect['scopes'])}/{'/'.join(effect['targets'])}"
+                     + (" audio requis" if effect["needs_audio"] else ""))
+    lines += ["POLICES : " + ", ".join(f["id"] for f in manifest["fonts"] if f["usable"])]
+    lines += _director_craft_lines(compact=compact)
+    lines += [
+        "ASSETS LOCAUX : list_assets kind=video|image|audio ou search_assets pour choisir un vrai media://. "
+        "Le nom renseigne le thème, pas une analyse visuelle ; licence inconnue à signaler. "
+        "B-roll en background.media, image via set_layer media ET hidden=false sur visual. "
+        "Musique via set_audio music ET enabled=true, music_volume=0.12 sous la voix, "
+        "music_fade_in=0.6/music_fade_out=1. Aucun média disponible : dégradé, silence, refs vides.",
+    ]
+    # Exemples few-shot : riches en mode détaillé, un seul en mode compact pour
+    # tenir dans la fenêtre d'un petit modèle. Le marqueur reste dans les deux.
+    ids = {t["id"] for t in manifest["templates"]}
+    examples = [e for e in AUTOPILOT_EXAMPLES if e["plan"]["template_id"] in ids]
+    if compact:
+        examples = examples[:1]
+    if examples:
+        lines.append("EXEMPLES VALIDÉS (adapte contenu, voix, médias et style au prompt réel ; "
+                     "design riche et cohérent, pas un simple set_theme) :")
+        for example in examples:
+            lines.append(json.dumps(example["plan"], ensure_ascii=False, separators=(",", ":")))
+    return "\n".join(lines)
+
+
+def _director_craft_lines(compact: bool = False) -> list[str]:
+    """Le métier de réalisateur : comment composer un montage impressionnant et
+    cohérent avec les briques réelles du studio. Version condensée pour les
+    petites fenêtres de contexte."""
+    if compact:
+        return [
+            "RÉALISATION : une idée/scène, titres <=8 mots, sous-titres <=12 ; accroche 2-3s puis "
+            "progression/déclic/conclusion. Anime les titres (kinetic_letters/spring_pop/mask_reveal), "
+            "emphasis sur les mots forts, parallax_depth/perspective_dolly pour le volume, étalonnage "
+            "color_grade, shine pour un reflet. 1-3 effets COHÉRENTS/cible, palette et accent uniques, "
+            "B-roll en zoom_slow/zoom_out, musique 0.12 sous la voix. Remplis tous les textes visibles. "
+            "Transition entre scènes : set_scene transition.type (fade/wipe/zoom/push/slide_*/dip_black), "
+            "transition.frames 12-20 ; 1re scène none. "
+            "Sous-titres calés sur la voix : \"captions\":true.",
+        ]
+    return [
+        "RÉALISATION — compose un montage, ne remplis pas un template :",
+        "  COMPOSITION/RYTHME : une idée/scène, titres <=8 mots, sous-titres <=12 ; accroche 2-3s, "
+        "progression/déclic/conclusion. Remplis tous les textes.",
+        "  MOUVEMENT : titres kinetic_letters/spring_pop/mask_reveal ; parallax_depth/"
+        "perspective_dolly ; B-roll zoom_slow/zoom_out.",
+        "  TRANSITIONS : set_scene transition.type (fade/dip_black/slide_*/wipe/zoom/push) + "
+        "transition.frames 12-20 ; 1re scène none.",
+        "  SOUS-TITRES : \"captions\":true dans le plan → sous-titres cinétiques calés sur la voix "
+        "(alignement énergie automatique, aucun texte inventé).",
+        "  LUMIÈRE/COULEUR : palette + accent uniques ; color_grade (teal_orange/bleute/sepia/"
+        "noir_blanc) ; shine, light_leak, vignette.",
+        "  TYPO/EMPHASE : emphasis mots forts, stagger mot/lettre, letter_spacing négatif "
+        "sur gros titres.",
+        "  EFFETS/SON : 1-3 effets COHÉRENTS/cible ; audio_pulse si musique ; "
+        "musique 0.12 sous voix, fondus courts. Langage visuel unique.",
+    ]
 
 
 def summary_for_ui(manifest: dict) -> dict[str, Any]:

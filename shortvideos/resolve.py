@@ -71,6 +71,28 @@ def _layer_window(fps: int, scene_start: int, scene_frames: int, layer: dict) ->
     }
 
 
+def _normalize_transition(raw, scene_frames: int, prev_frames: int, is_first: bool) -> dict:
+    """Transition d'entree normalisee pour le rendu, sans toucher la chronologie.
+
+    Le chevauchement est borne par la scene entrante ET la precedente : une
+    transition ne peut pas manger plus que la plus courte des deux scenes. La
+    premiere scene n'a pas de precedente, donc jamais de transition.
+    """
+    if is_first or not isinstance(raw, dict):
+        return {"type": "none", "frames": 0}
+    ttype = raw.get("type", "none")
+    if ttype not in schema.TRANSITION_TYPES:
+        ttype = "none"
+    try:
+        frames = int(raw.get("frames", 0) or 0)
+    except (TypeError, ValueError):
+        frames = 0
+    frames = max(0, min(frames, schema.TRANSITION_FRAMES_MAX, scene_frames, prev_frames))
+    if ttype == "none" or frames <= 0:
+        return {"type": "none", "frames": 0}
+    return {"type": ttype, "frames": frames}
+
+
 def resolve(project: dict) -> dict:
     """Projet edite -> projet resollu (frames absolues, ressources, graine)."""
     base = schema.clone(_strip_resolved(project))
@@ -106,7 +128,8 @@ def resolve(project: dict) -> dict:
         str(audio_cfg.get("music", "") or "") or str(audio_cfg.get("voice", "") or "")
     )
 
-    for sc in scenes:
+    prev_frames = 0
+    for scene_index, sc in enumerate(scenes):
         scene_frames = max(1, int(round(float(sc.get("duration", 0.0)) * fps)))
         bg = sc.get("background", {})
         bg_media = str(bg.get("media", "") or "")
@@ -165,10 +188,14 @@ def resolve(project: dict) -> dict:
                     "fit": bg.get("fit", "cover"),
                     "animation": bg.get("animation", "static"),
                 },
+                "transition": _normalize_transition(
+                    sc.get("transition"), scene_frames, prev_frames, scene_index == 0
+                ),
                 "layers": layers_resolved,
             }
         )
         cursor += scene_frames
+        prev_frames = scene_frames
 
     sig_media = str(signature.get("media", "") or "")
     if sig_media:

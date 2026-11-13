@@ -19,6 +19,9 @@ import json
 import os
 import re
 import subprocess
+import math
+import time
+import uuid
 from pathlib import Path
 
 from shortvideos import resolve as resolve_mod
@@ -170,6 +173,153 @@ def _terminate(proc: subprocess.Popen) -> None:
             proc.kill()
         except OSError:
             pass
+
+
+FRAME_TIMEOUT_SECONDS = 120.0
+_FRAME_LOG_LIMIT = 6000
+
+
+def _frame_log(output: str | bytes | None) -> str:
+    """Keep both the beginning and end of a command's log, never credentials."""
+    if isinstance(output, bytes):
+        output = output.decode("utf-8", errors="replace")
+    text = output or "aucune sortie"
+    text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+    text = re.sub(r"(?i)\b(?:https?|file)://[^\s\"<>]+", "[URL redacted]", text)
+    text = re.sub(r"(?i)data:[^\s\"<>]+", "[data redacted]", text)
+    text = re.sub(
+        r"(?i)(authorization|bearer|api[_-]?key|token|password|secret|pin)"
+        r"[\s\"':=]+[^\s,;]+", r"\1=[redacted]", text,
+    )
+    # Render subprocesses inherit the environment, but must not echo its secrets.
+    for key, value in os.environ.items():
+        if value and re.search(r"(?i)(key|token|secret|password|pin)$", key):
+            text = text.replace(value, "[redacted]")
+    if len(text) > _FRAME_LOG_LIMIT:
+        half = (_FRAME_LOG_LIMIT - 40) // 2
+        text = text[:half] + "\n[log truncated]\n" + text[-half:]
+    return text
+
+
+def _communicate_frame(job: Job, proc: subprocess.Popen, frame: int) -> str:
+    """Poll even silent children; communicate drains both pipes without readline."""
+    deadline = time.monotonic() + FRAME_TIMEOUT_SECONDS
+    output: str | bytes | None = None
+    completed = False
+    try:
+        while True:
+            if job.cancel_event.is_set():
+                raise JobCancelled()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    f"Remotion frame {frame}: timeout after {FRAME_TIMEOUT_SECONDS:g}s.\n"
+                    + _frame_log(output)
+                )
+            try:
+                output, _ = proc.communicate(timeout=min(0.25, remaining))
+                completed = True
+                if job.cancel_event.is_set():
+                    raise JobCancelled()
+                return output or ""
+            except subprocess.TimeoutExpired as exc:
+                # TimeoutExpired.output contains all output collected so far.
+                if exc.output is not None:
+                    output = exc.output
+    finally:
+        if not completed:
+            _terminate(proc)
+            try:
+                proc.communicate(timeout=2)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        for pipe in (proc.stdout, proc.stderr):
+            if pipe is not None:
+                pipe.close()
+
+
+def render_project_frames(job: Job, project: dict, frames: list[int], out_dir: Path, audit_layout: bool = False) -> list[Path]:
+    """Render at most six small stills, without changing the export pipeline."""
+    if (not isinstance(frames, list) or not 1 <= len(frames) <= 6
+            or any(type(frame) is not int for frame in frames)
+            or len(set(frames)) != len(frames)):
+        raise ValueError("frames must contain 1 to 6 distinct integer frame numbers.")
+    if job.cancel_event.is_set():
+        raise JobCancelled()
+    clean = copy.deepcopy(project)
+    clean.pop("resolved", None)
+    prepared = prepare_for_render(clean)
+    resolved = prepared.get("resolved") or {}
+    export = prepared.get("export") or {}
+    width = resolved.get("width", export.get("width", 1080))
+    height = resolved.get("height", export.get("height", 1920))
+    fps = resolved.get("fps", export.get("fps", 30))
+    if (any(type(n) is not int for n in (width, height, fps))
+            or not 16 <= width <= 3840 or not 16 <= height <= 3840
+            or width * height > 8_294_400 or not 1 <= fps <= 60):
+        raise ValueError("Frame review requires dimensions 16..3840 (max 8.3MP), fps 1..60.")
+    total = resolved.get("total_frames")
+    if total is None and clean.get("version") != schema.SCHEMA_VERSION_V2:
+        duration = prepared.get("timing", {}).get("duration")
+        if type(duration) not in (int, float) or not math.isfinite(duration) or not 0 < duration <= 120:
+            raise ValueError("Frame review requires a finite duration of at most 120 seconds.")
+        total = max(1, round(duration * fps))
+    if type(total) is not int or not 1 <= total <= 120 * fps:
+        raise ValueError("Resolved duration must be 1 frame to 120 seconds for frame review.")
+    if any(frame < 0 or frame >= total for frame in frames):
+        raise ValueError(f"Frame numbers must be within the resolved duration: 0..{total - 1}.")
+    composition = composition_id_of(prepared)
+    node, cli = node_command(), remotion_cli()
+    # No upscaling; tall compositions are bounded too. Floor avoids >540 rounding.
+    scale = math.floor(min(1.0, 540 / width, 1024 / height) * 1_000_000) / 1_000_000
+    out_dir = Path(out_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = [out_dir / f"frame-{frame}.png" for frame in frames]
+    if any(path.exists() for path in paths):
+        raise ValueError("Frame output files already exist; use an empty temporary directory.")
+    if audit_layout and composition != "quote-cinematic":
+        raise ValueError("La sonde DOM est disponible pour quote_cinematic uniquement.")
+    props_path = mediacache.write_props(prepared, f"{job.id}-frames-{uuid.uuid4().hex[:8]}")
+    succeeded = False
+    try:
+        commands = [(frames, props_path, out_dir)] if audit_layout else [
+            ([frame], props_path, out_dir) for frame in frames
+        ]
+        for index, (batch, props, destination) in enumerate(commands):
+            if job.cancel_event.is_set():
+                raise JobCancelled()
+            cmd = ([str(node), str(WEB_DIR / "audit-layout.mjs"), str(props), composition,
+                    str(destination), json.dumps(batch), f"{scale:.6f}"] if audit_layout else [
+                str(node), str(cli), "still", ENTRY, composition, str(paths[index]),
+                f"--frame={batch[0]}", f"--props={props}", f"--scale={scale:.6f}",
+                "--image-format=png", "--log=error",
+            ])
+            try:
+                proc = subprocess.Popen(
+                    cmd, cwd=str(WEB_DIR), env=_env(), stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+                    shell=False,
+                )
+            except OSError as exc:
+                raise RuntimeError(f"Unable to start Remotion: {_frame_log(str(exc))}") from None
+            job.result_process = proc
+            try:
+                output = _communicate_frame(job, proc, batch[0])
+            finally:
+                job.result_process = None
+            if proc.returncode != 0:
+                raise RuntimeError(f"Remotion frames {batch} failed (code {proc.returncode}):\n{_frame_log(output)}")
+            for frame, path in zip(batch, paths):
+                if not path.is_file() or path.stat().st_size == 0:
+                    raise RuntimeError(f"Remotion frame {frame} produced no image.\n{_frame_log(output)}")
+            job.set_progress(index + 1, len(commands), f"Frames {batch}")
+        succeeded = True
+        return paths
+    finally:
+        props_path.unlink(missing_ok=True)
+        if not succeeded:
+            for path in paths:
+                path.unlink(missing_ok=True)
 
 
 def render_props_preview(project: dict) -> dict:

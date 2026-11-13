@@ -29,12 +29,25 @@ from shortvideos.validation import validate_project
 
 from ..security import MEDIA_DIR
 
-PROPOSAL_TYPES = ("question", "project_new", "project_patch", "library_save", "batch_plan", "unavailable")
+PROPOSAL_TYPES = ("question", "project_new", "project_patch", "library_save", "batch_plan", "autopilot_plan", "studio_action", "unavailable")
+
+# Étapes fixes d'un plan autopilote : l'orchestrateur les déroule dans l'ordre.
+AUTOPILOT_STEPS = (
+    ("script", "Script"),
+    ("design", "Design"),
+    ("voice", "Voix off"),
+    ("export", "Export MP4"),
+)
+
+# Un réalisateur compose un montage riche : assez d'ops pour animer, étalonner,
+# poser des effets et du B-roll sur plusieurs scènes, sans dérive illimitée.
+MAX_AUTOPILOT_DESIGN_OPS = 24
 
 THEME_KEYS = set(schema.default_theme().keys())
 EXPORT_KEYS = {"width", "height", "fps"}
 VARIATION_KEYS = {"seed"}
-SCENE_KEYS = {"duration", "label", "hidden", "background.fit", "background.animation", "background.media"}
+SCENE_KEYS = {"duration", "label", "hidden", "background.fit", "background.animation", "background.media",
+              "transition.type", "transition.frames"}
 LAYER_KEYS = {
     "text", "hidden", "locked", "opacity", "emphasis", "media",
     "style.font_family", "style.font_weight", "style.font_size", "style.line_height",
@@ -67,6 +80,7 @@ ENUM_PATHS = {
     "position.direction": schema.DIRECTIONS,
     "background.fit": schema.BACKGROUND_FIT,
     "background.animation": schema.BACKGROUND_ANIM,
+    "transition.type": schema.TRANSITION_TYPES,
 }
 
 # Ops « constructeur » : passent par les aides de schema, jamais par du JSON libre.
@@ -562,6 +576,7 @@ def new_proposal(proposal_type: str, summary: str) -> dict:
         "created_at": time.time(),
         "batch": None,
         "library": None,
+        "autopilot": None,
         "capability": "",
         "alternative": "",
     }
@@ -626,8 +641,28 @@ def from_reply(
         proposal["validation"] = {"state": "valid", "errors": [], "warnings": warnings}
         return proposal
 
+    if ptype == "studio_action":
+        from . import actions
+
+        action = reply.get("action")
+        if not isinstance(action, dict) or set(action) != {"name", "params"}:
+            raise ProposalError(["studio_action exige action={name,params}, sans autre champ."])
+        try:
+            descriptor = actions.describe(action["name"], action["params"], base_project)
+        except actions.ActionError as exc:
+            raise ProposalError([str(exc)]) from None
+        descriptor["confirmation"] = uuid.uuid4().hex
+        proposal["action"] = descriptor
+        proposal["project_name"] = project_name
+        proposal["base_revision"] = revision_of(base_project) if base_project is not None else ""
+        proposal["validation"] = {"state": "valid", "errors": [], "warnings": []}
+        return proposal
+
     if ptype == "batch_plan":
         return _batch_proposal(reply, proposal, known_columns=csv_columns)
+
+    if ptype == "autopilot_plan":
+        return _autopilot_proposal(reply, proposal)
 
     # --- types portant un projet candidat ----------------------------------
     if ptype == "project_patch":
@@ -686,6 +721,129 @@ def from_reply(
         raise ProposalError(errors, kind="invalid_project") from None
     proposal["validation"] = {"state": "valid", "errors": [], "warnings": warnings}
     return proposal
+
+
+def _autopilot_proposal(reply: dict, proposal: dict) -> dict:
+    """Plan script → design → voix → export, entièrement validé avant le départ.
+
+    Le candidat porte script + design (les mêmes ops typées que project_new,
+    donc mêmes refus réparables) ; l'orchestrateur les rejoue étape par étape.
+    La voix off n'est pas synthétisée ici : seule une voix PRÊTE est acceptée,
+    aucun téléchargement ne se cache dans une proposition.
+    """
+    template_id = str(reply.get("template_id", "") or "").strip()
+    if not template_id:
+        raise ProposalError(
+            ["type=autopilot_plan exige « template_id » : un modèle de la bibliothèque "
+             f"(disponibles : {', '.join(_template_ids())})."]
+        )
+    from .. import library as library_mod
+
+    try:
+        template = library_mod.get_project(template_id)
+    except Exception as e:  # noqa: BLE001 - identifiant inconnu : message réparable
+        raise ProposalError(
+            [f"Modèle de bibliothèque inconnu : {template_id!r}. "
+             f"Modèles disponibles : {', '.join(_template_ids())}."]
+        ) from e
+
+    script = reply.get("script")
+    if not isinstance(script, list) or not script:
+        raise ProposalError(
+            ['type=autopilot_plan exige « script » : liste non vide de '
+             '{"scene_id":"…","layer_id":"…","text":"…"} sur les calques du modèle.']
+        )
+    script_ops: list[dict] = []
+    for index, entry in enumerate(script[:12]):
+        if not isinstance(entry, dict):
+            raise ProposalError([f"script[{index}] : objet attendu."])
+        scene_id = str(entry.get("scene_id", "") or "").strip()
+        layer_id = str(entry.get("layer_id", "") or "").strip()
+        text = entry.get("text")
+        if not scene_id or not layer_id or not isinstance(text, str) or not text.strip():
+            raise ProposalError(
+                [f"script[{index}] : scene_id, layer_id et text (non vide) sont requis. "
+                 + _ids_hint(template)]
+            )
+        script_ops.append({"op": "set_layer", "scene_id": scene_id, "layer_id": layer_id,
+                           "path": "text", "value": text})
+    design = reply.get("design")
+    if design is None:
+        design = []
+    if not isinstance(design, list):
+        raise ProposalError(["« design » doit être une liste d'operations typées (ou absente)."])
+
+    candidate, changes, _ = apply_operations(template, script_ops + design[:MAX_AUTOPILOT_DESIGN_OPS])
+    errors, warnings = validate_candidate(candidate)
+    if errors:
+        proposal["validation"] = {"state": "invalid", "errors": errors, "warnings": warnings}
+        raise ProposalError(errors, kind="invalid_project") from None
+
+    voice = _autopilot_voice(reply.get("voice"), script_ops)
+    # Sous-titres cinétiques calés sur la voix : sans voix off, rien à synchroniser.
+    captions = bool(reply.get("captions", False)) and voice is not None
+    # Auto-correction après rendu : audit technique borné du montage exporté.
+    review = bool(reply.get("review", False))
+    export = reply.get("export") if isinstance(reply.get("export"), dict) else {}
+    name = str(export.get("name", "") or "").strip()[:80]
+    if name in {".", ".."}:
+        raise ProposalError(["export.name invalide : un nom de fichier simple est requis."])
+    if not name:
+        name = str(candidate.get("name") or "autopilot")[:80]
+
+    proposal["candidate"] = candidate
+    proposal["changes"] = changes
+    proposal["warnings"].extend(warnings)
+    proposal["project_name"] = str(reply.get("project_name") or candidate.get("name") or "")[:80]
+    proposal["autopilot"] = {
+        "template_id": template_id,
+        "script": script_ops,
+        "design": design[:MAX_AUTOPILOT_DESIGN_OPS],
+        "voice": voice,
+        "captions": captions,
+        "review": review,
+        "export": {"name": name},
+        "steps": [{"id": sid, "label": label} for sid, label in AUTOPILOT_STEPS],
+    }
+    proposal["validation"] = {"state": "valid", "errors": [], "warnings": warnings}
+    return proposal
+
+
+def _autopilot_voice(raw, script_ops: list[dict]) -> dict | None:
+    if raw in (None, "", {}):
+        return None
+    if not isinstance(raw, dict):
+        raise ProposalError(["« voice » doit être un objet {voice_id, speed, text} ou null."])
+    voice_id = str(raw.get("voice_id", "") or "").strip()
+    if not voice_id:
+        raise ProposalError(["voice exige « voice_id » : une voix prête de la liste fournie."])
+    from shortvideos import tts as tts_mod
+
+    from ..security import TTS_MODELS_DIR
+
+    try:
+        ready_ids = [v["id"] for v in tts_mod.status(TTS_MODELS_DIR)["voices"] if v.get("ready")]
+    except Exception as e:  # noqa: BLE001 - catalogue illisible : refus réparable
+        raise ProposalError([f"Catalogue TTS indisponible : {e}"]) from e
+    if voice_id not in ready_ids:
+        raise ProposalError(
+            [f"Voix {voice_id!r} inconnue ou non téléchargée. Voix prêtes : "
+             f"{', '.join(ready_ids[:15])} — ou voice=null pour aucune voix off."]
+        )
+    text = str(raw.get("text", "") or "").strip()
+    if not text:
+        text = " ".join(str(op["value"]).strip() for op in script_ops).strip()
+    if not text:
+        raise ProposalError(["voice.text est vide : rien à synthétiser."])
+    if len(text) > 5000:
+        raise ProposalError(["voice.text dépasse 5000 caractères."])
+    try:
+        speed = float(raw.get("speed", 1.0))
+    except (TypeError, ValueError):
+        raise ProposalError(["voice.speed attend un nombre entre 0.5 et 2.0."]) from None
+    if not 0.5 <= speed <= 2.0:
+        raise ProposalError([f"voice.speed {speed} hors plage (0.5 à 2.0)."])
+    return {"voice_id": voice_id, "speed": speed, "text": text}
 
 
 def _template_ids() -> list[str]:
@@ -774,6 +932,8 @@ def public_view(proposal: dict) -> dict:
         "status": proposal.get("status", "proposed"),
         "batch": proposal.get("batch"),
         "library": proposal.get("library"),
+        "autopilot": proposal.get("autopilot"),
+        "action": proposal.get("action"),
         "capability": proposal.get("capability", ""),
         "alternative": proposal.get("alternative", ""),
         "has_candidate": proposal.get("candidate") is not None,

@@ -320,6 +320,30 @@ def validate_project_v2(data: dict) -> tuple[list[str], list[str]]:
         elif bg_media and not _media_exists(bg_media):
             errors.append(f"{tag}.background : media manquant ({bg_media}).")
 
+        trans = sc.get("transition")
+        if trans is not None:
+            if not isinstance(trans, dict):
+                errors.append(f"{tag}.transition : objet attendu ({{type, frames}}).")
+            else:
+                ttype = trans.get("type", "none")
+                if ttype not in schema.TRANSITION_TYPES:
+                    errors.append(
+                        f"{tag}.transition.type inconnu : {ttype!r} "
+                        f"(connus : {', '.join(schema.TRANSITION_TYPES)})."
+                    )
+                tframes = _check_num(errors, warnings, tag, "transition.frames",
+                                     trans.get("frames", 0), 0, schema.TRANSITION_FRAMES_MAX, integer=True)
+                if isinstance(tframes, (int, float)):
+                    if tframes > scene_frames:
+                        errors.append(
+                            f"{tag}.transition.frames ({int(tframes)}) depasse la duree de la scene "
+                            f"({scene_frames} frames)."
+                        )
+                    if ttype == "none" and tframes:
+                        warnings.append(f"{tag}.transition : type « none » avec frames={int(tframes)} ; ignoree.")
+                    if index == 0 and ttype != "none":
+                        warnings.append(f"{tag}.transition : premiere scene, pas de transition d'entree possible.")
+
         _scene_effects, fx_errors, fx_warnings = effects_mod.normalize(
             sc.get("effects"),
             "scene",

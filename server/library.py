@@ -33,6 +33,22 @@ BUILTIN_MODELS: dict[str, dict] = {
         ),
         "model_id": "quote_cinematic",
     },
+    "recit-cinematique": {
+        "label": "Récit cinématique",
+        "description": (
+            "Cinq scènes en 18 secondes : accroche, contexte, tension, déclic et conclusion. "
+            "Bleu profond, ambre chaleureux et typographie rythmée, sans média requis."
+        ),
+        "model_id": "quote_cinematic",
+    },
+    "showcase-cinematique": {
+        "label": "Showcase cinématique",
+        "description": (
+            "Quatre scènes en 14 secondes : promesse, détail, bénéfice et invitation. "
+            "Noir, blanc et or ; deux emplacements visuels à activer après ajout de médias."
+        ),
+        "model_id": "quote_cinematic",
+    },
 }
 
 
@@ -144,7 +160,10 @@ def builtin_project(model_id: str) -> dict:
     info = BUILTIN_MODELS.get(model_id)
     if info is None:
         raise HTTPException(status_code=404, detail=f"Modèle intégré inconnu : {model_id}")
-    project = schema.new_project(info["model_id"])
+    if model_id in ("recit-cinematique", "showcase-cinematique"):
+        project = schema.preset_project(model_id)
+    else:
+        project = schema.new_project(info["model_id"])
     project["label"] = info["label"]
     project["description"] = info["description"]
     return project

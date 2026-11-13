@@ -33,7 +33,7 @@ _PARAM_FIELDS = ("key", "label", "type", "default", "min", "max", "step", "unit"
 
 READ_TOOLS = (
     # connaissances & capacités
-    "get_capabilities",
+    "get_capabilities", "get_action_catalog", "get_tts_status", "get_moments",
     "search_knowledge",
     "read_knowledge",
     # design & bibliothèque
@@ -77,9 +77,13 @@ EXECUTE_TOOLS = (
     "start_batch",
 )
 
-TOOL_DESCRIPTION = """OUTILS DE LECTURE (un par tour, 3 au maximum par demande). Pour en utiliser un,
+TOOL_DESCRIPTION = """OUTILS DE LECTURE (au plus max_tool_calls du contexte configuré, tous tours compris).
+- actions confirmées : get_action_catalog {"name":"project_review"} (nom absent = liste) ;
+  get_tts_status {} ; get_moments {}. Puis type=studio_action, jamais d'exécution directe. Pour en utiliser un,
 réponds UNIQUEMENT avec : {"tool_call":{"name":"…","args":{…}}}
-Le serveur renverra l'observation au tour suivant ; n'écris rien d'autre.
+Pour plusieurs lectures d'un coup, préfère un seul tour :
+{"tool_calls":[{"name":"…","args":{…}},{"name":"…","args":{…}}]}
+Le serveur renverra toutes les observations dans un seul message ; n'écris rien d'autre.
 - capacités : get_capabilities {}
 - connaissances : search_knowledge {"query":"…","limit":4} · read_knowledge {"id":123}
 - design : get_current_project {}
@@ -146,6 +150,21 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
             f"Outil non autorisé : {name!r}. Outils de lecture : {', '.join(READ_TOOLS)}."
         )
 
+    if name == "get_action_catalog":
+        from . import actions
+        try:
+            return actions.catalog(_str_arg(args, "name"))
+        except actions.ActionError as exc:
+            raise ToolError(str(exc)) from None
+
+    if name == "get_tts_status":
+        from ..api import tts
+        return tts.status()
+
+    if name == "get_moments":
+        from .. import moments
+        return {"analyses": moments.list_analyses()[:20]}
+
     if name == "get_capabilities":
         manifest = ctx.get("manifest") or capabilities.build()
         return {"capabilities": capabilities.summary_for_ui(manifest)}
@@ -178,7 +197,7 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
             "templates": [
                 {"id": t["id"], "label": t["label"], "model_id": t["model_id"],
                  "scenes": t["scenes"], "duration": t["duration"],
-                 "builtin": t["builtin"]}
+                 "builtin": t["builtin"], "structure": t.get("structure", [])}
                 for t in capabilities.build()["templates"]
             ]
         }
@@ -209,7 +228,14 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
         kind = _str_arg(args, "kind", "video")
         if kind not in folders_mod.KINDS:
             raise ToolError(f"Type de ressource inconnu : {kind!r} (video, audio, image).")
-        assets = folders_mod.assets_by_kind(kind)[:MAX_ASSETS]
+        assets = list(folders_mod.assets_by_kind(kind))
+        seen = {a["ref"] for a in assets}
+        manifest = ctx.get("manifest") or capabilities.build()
+        for item in manifest["media"]:
+            if item["kind"] == kind and item["ref"] not in seen:
+                assets.append(item)
+                seen.add(item["ref"])
+        assets = assets[:MAX_ASSETS]
         return {
             "kind": kind,
             "assets": [

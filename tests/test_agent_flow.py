@@ -354,3 +354,41 @@ def test_reject_leaves_the_project_untouched(fake_llm):
     assert refused["status"] == "rejected"
     # Refuser ne postule rien : le projet publié par l'éditeur n'a pas bougé.
     assert _layer_of(project, "s2", "quote")["style"].get("color") != BLEU_PETROLE
+
+
+def test_several_tools_in_one_turn_cost_one_llm_call(fake_llm):
+    """tool_calls groupés : toutes les observations reviennent en un seul message."""
+    project = _project()
+    calls = fake_llm(
+        {"tool_calls": [{"name": "list_templates", "args": {}}, {"name": "list_fonts", "args": {}}]},
+        {
+            "type": "project_patch",
+            "summary": "Accent bleu pétrole.",
+            "operations": [
+                {
+                    "op": "set_layer",
+                    "scene_id": "s2",
+                    "layer_id": "quote",
+                    "path": "style.color",
+                    "value": BLEU_PETROLE,
+                }
+            ],
+        },
+    )
+    result = _ask({"message": "accent", "project": project, "project_name": "citation"})
+    assert calls["index"] == 2, "un tour d'outils groupés, puis la proposition"
+    assert result["meta"]["tool_calls"] == 2
+    assert result["proposal"]["type"] == "project_patch"
+
+
+def test_single_tool_call_still_works(fake_llm):
+    """L'ancienne forme tool_call (un objet) reste acceptée."""
+    project = _project()
+    calls = fake_llm(
+        {"tool_call": {"name": "list_templates", "args": {}}},
+        {"type": "question", "summary": "Précision.", "questions": ["Quelle teinte ?"]},
+    )
+    result = _ask({"message": "accent", "project": project, "project_name": "citation"})
+    assert calls["index"] == 2
+    assert result["meta"]["tool_calls"] == 1
+    assert result["proposal"]["questions"] == ["Quelle teinte ?"]

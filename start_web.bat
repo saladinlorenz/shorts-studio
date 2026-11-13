@@ -4,6 +4,7 @@ rem  Lanceur Windows de l'interface web locale (youtube_clipper)
 rem  - demarre FastAPI sur l'hote et le port de server\settings.json
 rem  - ouvre le navigateur seulement quand le serveur repond
 rem  - construit le frontend une 1re fois si besoin (npm install/build)
+rem  - relance le serveur si le watchdog detecte une panne (code de sortie 3)
 rem  Aucun telechargement n'est fait au demarrage, sauf la premiere
 rem  construction du frontend (npm install) si web\node_modules est absent.
 rem ============================================================
@@ -48,10 +49,26 @@ if not exist "web\dist\index.html" (
 echo [2/2] Demarrage du serveur...
 echo       Le navigateur s'ouvrira des que le serveur repond.
 echo       Ctrl+C dans cette fenetre arrete l'application.
-python -m server.app --open
-if errorlevel 1 (
+set "FIRST_RUN=1"
+:server_loop
+if defined FIRST_RUN (
+  python -m server.app --open
+) else (
+  python -m server.app
+)
+set "EXIT_CODE=%errorlevel%"
+rem Code 3 : le watchdog a constate que le serveur ne repond plus (WinError 64).
+rem On relance une instance neuve ; le navigateur ne s'ouvre qu'au 1er demarrage.
+if "%EXIT_CODE%"=="3" (
   echo.
-  echo ERREUR: le serveur s'est arrete avec un code d'erreur.
+  echo [watchdog] Le serveur ne repondait plus : redemarrage automatique dans 3 secondes...
+  set "FIRST_RUN="
+  %SystemRoot%\System32\timeout.exe /t 3 /nobreak >nul 2>&1
+  goto server_loop
+)
+if not "%EXIT_CODE%"=="0" (
+  echo.
+  echo ERREUR: le serveur s'est arrete avec le code %EXIT_CODE%.
   pause
 )
 endlocal

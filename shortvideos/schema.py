@@ -32,6 +32,15 @@ BACKGROUND_ANIM = ("static", "zoom_slow", "zoom_out")
 ALIGNMENTS = ("left", "center", "right")
 DIRECTIONS = ("ltr", "rtl")
 
+# Transitions entre scenes : un chevauchement rendu a la frontiere, sans toucher
+# la chronologie resolue (le curseur, la duree totale et les fenetres de calques
+# restent identiques). « none » = coupe franche, le comportement historique.
+TRANSITION_TYPES = (
+    "none", "fade", "dip_black", "slide_left", "slide_right",
+    "slide_up", "slide_down", "wipe", "zoom", "push",
+)
+TRANSITION_FRAMES_MAX = 60
+
 # Taille de composition de reference : les tailles de police sont en pixels
 # pour ce cadre, puis mise a l'echelle par hauteur d'image (comme v1).
 REF_HEIGHT = 1920
@@ -138,7 +147,13 @@ def image_layer(
     return layer
 
 
-def scene(scene_id: str, label: str, duration: float, layers: list[dict], effects: list | None = None, **bg) -> dict:
+def default_transition() -> dict:
+    """Transition d'entree d'une scene : coupe franche par defaut."""
+    return {"type": "none", "frames": 0}
+
+
+def scene(scene_id: str, label: str, duration: float, layers: list[dict], effects: list | None = None,
+          transition: dict | None = None, **bg) -> dict:
     background = {"media": "", "fit": "cover", "animation": "static"}
     background.update(bg)
     return {
@@ -148,6 +163,7 @@ def scene(scene_id: str, label: str, duration: float, layers: list[dict], effect
         "hidden": False,
         "effects": copy.deepcopy(list(effects)) if effects else [],
         "background": background,
+        "transition": copy.deepcopy(transition) if transition else default_transition(),
         "layers": layers,
     }
 
@@ -350,6 +366,103 @@ def cinematic_project() -> dict:
             "filename": "",
         },
     }
+
+
+def preset_project(preset_id: str) -> dict:
+    """Construit un preset indépendant, sans média, pour quote_cinematic."""
+    if preset_id not in ("recit-cinematique", "showcase-cinematique"):
+        raise RuntimeError(f"Preset inconnu : {preset_id!r}.")
+
+    project = cinematic_project()
+    project["name"] = preset_id
+    project["content"]["signature"].update(enabled=False, media="", handle="")
+    project["audio"].update(
+        music="", voice="", enabled=False, music_volume=0.12, voice_volume=1.0,
+        music_fade_in=0.6, music_fade_out=1.0,
+    )
+    narrative = preset_id == "recit-cinematique"
+    if narrative:
+        project["theme"].update(
+            palette_id="bleu_ambre", background_color="#080F1E", surface_color="#192D48",
+            text_color="#F6F3EC", accent_color="#E8B46A", author_color="#E8B46A",
+            muted_color="#AAB4C4", font_family="space-grotesk", font_weight=700,
+            font_size=84, line_height=1.12, letter_spacing=-0.015,
+        )
+        beats = [
+            ("Accroche", 3.0, "Tout part\nd’un choix.", "Une idée peut tout changer.", "hook", 0.38, 0.59, "mask_reveal"),
+            ("Contexte", 4.0, "Chaque jour,\nle même chemin.", "Le confort avait pris toute la place.", "body", 0.46, 0.68, "slide_up"),
+            ("Tension", 4.0, "Et si rien\nne changeait ?", "Attendre devenait le vrai risque.", "body", 0.40, 0.63, "mask_reveal"),
+            ("Déclic", 4.0, "Un premier pas.", "Pas parfait. Mais bien réel.", "reveal", 0.48, 0.70, "scale"),
+            ("Conclusion", 3.0, "À vous\nd’écrire la suite.", "Commencez petit. Commencez maintenant.", "reveal", 0.42, 0.64, "mask_reveal"),
+        ]
+        scene_effects = {
+            1: [{"id": "light_leak", "params": {"color_a": "#E8B46A", "color_b": "#FFD99A", "intensity": 0.12, "size": 0.65, "cycle_frames": 180}}],
+            4: [{"id": "color_grade", "params": {"look": "teal_orange", "strength": 0.15, "contrast": 1.05, "vignette": 0.1}}],
+        }
+        title_effects = {
+            1: [{"id": "shine", "params": {"once": True, "period_frames": 55, "width": 0.2, "intensity": 1.5, "opacity": 0.45}}],
+            4: [{"id": "spring_pop", "params": {"damping": 18, "stiffness": 160, "mass": 1, "overshoot": 1.06, "rotate_deg": 0}}],
+        }
+    else:
+        project["theme"].update(
+            palette_id="noir_or", background_color="#0B0B10", surface_color="#24232B",
+            text_color="#FAF8F2", accent_color="#D9BC7A", author_color="#D9BC7A",
+            muted_color="#B7B3AA", font_family="playfair-display", font_weight=700,
+            font_size=92, line_height=1.16, letter_spacing=0.01,
+        )
+        beats = [
+            ("Promesse", 3.0, "L’essentiel,\nsublimé.", "Une présence. Tout simplement.", "hook", 0.40, 0.62, "mask_reveal"),
+            ("Détail", 4.0, "Le sens\ndu détail.", "Chaque ligne compte.", "body", 0.68, 0.83, "slide_up"),
+            ("Bénéfice", 4.0, "Plus de place\npour l’essentiel.", "Votre quotidien, en plus simple.", "body", 0.68, 0.83, "mask_reveal"),
+            ("Invitation", 3.0, "Faites place\nà l’exception.", "Découvrez votre prochain essentiel.", "reveal", 0.42, 0.65, "scale"),
+        ]
+        scene_effects = {
+            1: [{"id": "light_leak", "params": {"color_a": "#D9BC7A", "color_b": "#FAF8F2", "intensity": 0.08, "size": 0.6, "cycle_frames": 240}}],
+        }
+        title_effects = {
+            4: [{"id": "shine", "params": {"once": True, "period_frames": 60, "width": 0.18, "intensity": 1.4, "opacity": 0.4}}],
+        }
+
+    scenes = []
+    for index, (label, duration, text, caption, role, title_y, caption_y, entrance) in enumerate(beats, 1):
+        title_style = {}
+        if narrative and index in (1, 5):
+            title_style.update(font_family="anton", font_weight=400, font_size=112, line_height=1.04)
+        elif not narrative and index in (2, 3):
+            title_style["font_size"] = 76
+        title = text_layer(
+            "title", text, role=role, start_frames=4, in_frames=24,
+            position={"y": title_y, "width": 0.82}, style=title_style,
+            animation={
+                "in": entrance, "unit": "line" if "\n" in text else "block",
+                "stagger_frames": 4, "out_frames": 10,
+                "easing": "ease_out_quint", "distance": 0.035,
+            },
+            effects=title_effects.get(index),
+        )
+        subtitle = text_layer(
+            "subtitle", caption, role="caption", start_frames=24, in_frames=18,
+            position={"y": caption_y, "width": 0.82},
+            style={"font_family": "space-grotesk", "font_weight": 500, "font_size": 32,
+                   "line_height": 1.3, "letter_spacing": 0.05},
+            animation={"in": "slide_up", "unit": "block", "distance": 0.02, "out_frames": 10},
+        )
+        subtitle["emphasis"] = [caption]
+        layers = [title, subtitle]
+        if not narrative and index in (2, 3):
+            visual = image_layer(
+                "visual", media="", start_frames=0, in_frames=24,
+                position={"x": 0.5, "y": 0.36, "width": 0.68},
+                animation={"in": "scale", "out": "fade", "out_frames": 10, "easing": "ease_out_quint"},
+            )
+            visual["hidden"] = True  # Emplacement à activer après l'ajout d'un média.
+            layers.insert(0, visual)
+        scenes.append(scene(
+            f"s{index}", label, duration, layers, effects=scene_effects.get(index),
+            media="", animation="zoom_slow" if index % 2 else "zoom_out",
+        ))
+    project["content"]["scenes"] = scenes
+    return project
 
 
 def new_project(model_id: str = "quote_cinematic") -> dict:

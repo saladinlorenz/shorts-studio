@@ -21,6 +21,8 @@ import { SceneEffects } from "./effects/scene";
 import { SceneOverlays } from "./effects/overlay";
 import { cssFamily, loadFontsFor, nearestWeight } from "./fonts";
 import { renderMediaUrl } from "./mediaUrl";
+import { enterStyle, exitStyle } from "./transitions";
+import LayoutProbe from "./LayoutProbe";
 import type {
   ImageLayer,
   Layer,
@@ -69,7 +71,10 @@ const Backdrop: React.FC<{
   let scale = 1;
   if (anim === "zoom_slow") scale = 1.03 + 0.09 * progress;
   if (anim === "zoom_out") scale = 1.13 - 0.09 * progress;
-  const fade = Math.min(1, local / BACKDROP_FADE_FRAMES);
+  // Une scene en transition est rendue avant son start_frame : le fondu du fond
+  // part du debut de rendu (sinon opacite negative), jamais de l'horloge resolue.
+  const renderLocal = Math.max(0, frame - (scene.start_frame - (scene.transition?.frames ?? 0)));
+  const fade = Math.min(1, renderLocal / BACKDROP_FADE_FRAMES);
   const media = renderMediaUrl(scene.background.media);
   const fit = scene.background.fit === "contain" ? "contain" : "cover";
 
@@ -292,7 +297,8 @@ const TextLayerView: React.FC<{
   const content = fx.decorate ? fx.decorate(body) : body;
 
   return (
-    <div style={boxStyle}>
+    <div style={boxStyle} data-probe={`${sceneCtx.uid}/${layer.id}`} data-probe-kind="text"
+      data-probe-steady={frame >= resolved.in_end_frame && frame < resolved.out_start_frame}>
       <div ref={contentRef} style={fxBox(fx)}>
         {content}
       </div>
@@ -355,7 +361,8 @@ const ImageLayerView: React.FC<{
   );
 
   return (
-    <div
+    <div data-probe={`${sceneCtx.uid}/${layer.id}`} data-probe-kind="image"
+      data-probe-steady={frame >= resolved.in_end_frame && frame < resolved.out_start_frame}
       style={{
         position: "absolute",
         left: `${layer.position.x * 100}%`,
@@ -423,10 +430,12 @@ const Signature: React.FC<{ project: StudioProject; frame: number }> = ({ projec
       }}
     >
       {logo && (
-        <Img src={logo} style={{ width: `${sig.logo_width_px}px`, height: "auto", display: "block" }} />
+        <div data-probe="signature/logo" data-probe-kind="image" data-probe-steady={local >= inFrames}>
+          <Img src={logo} style={{ width: `${sig.logo_width_px}px`, height: "auto", display: "block" }} />
+        </div>
       )}
       {sig.handle.trim() && (
-        <div
+        <div data-probe="signature/handle" data-probe-kind="text" data-probe-steady={local >= inFrames}
           style={{
             fontFamily: cssFamily(sig.font_family),
             fontWeight: nearestWeight(sig.font_family, sig.font_weight),
@@ -474,13 +483,18 @@ function useProjectFonts(project: StudioProject): boolean {
   return ready;
 }
 
-export const QuoteCinematic: React.FC<{ project: StudioProject }> = ({ project }) => {
+export const QuoteCinematic: React.FC<{ project: StudioProject; auditLayout?: boolean }> = ({ project, auditLayout = false }) => {
+  const canvasRef = useRef<HTMLDivElement>(null);
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
   useProjectFonts(project);
 
   const resolved = project.resolved;
-  const active = resolved.scenes.filter((s) => !s.hidden && frame >= s.start_frame && frame < s.end_frame);
+  // Une scene entrante est rendue D frames avant son start_frame pour chevaucher
+  // la precedente (transition). La chronologie resolue reste intacte.
+  const active = resolved.scenes.filter(
+    (s) => !s.hidden && frame >= s.start_frame - (s.transition?.frames ?? 0) && frame < s.end_frame,
+  );
   const music = resolved.audio.enabled ? renderMediaUrl(resolved.audio.music) : null;
   const wantsMeter = active.some(
     (scene) =>
@@ -504,8 +518,24 @@ export const QuoteCinematic: React.FC<{ project: StudioProject }> = ({ project }
         audioData,
       };
       const contentScene = project.content.scenes.find((s) => s.id === scene.id);
+      // Chevauchement de transition a la frontiere : cette scene entre (D_in)
+      // pendant que la precedente sort ; elle sort (D_out de la suivante) pendant
+      // que la suivante entre. Les deux partagent la meme progression p.
+      const idx = resolved.scenes.findIndex((s) => s.id === scene.id);
+      const next = idx >= 0 ? resolved.scenes[idx + 1] : undefined;
+      const dIn = scene.transition?.frames ?? 0;
+      const dOut = next?.transition?.frames ?? 0;
+      const enterP = dIn > 0 && frame < scene.start_frame ? (frame - (scene.start_frame - dIn)) / dIn : null;
+      const exitP =
+        next && dOut > 0 && frame >= scene.end_frame - dOut && frame < scene.end_frame
+          ? (frame - (scene.end_frame - dOut)) / dOut
+          : null;
+      const transitionStyle: React.CSSProperties = {
+        ...(enterP !== null ? enterStyle(scene.transition.type, enterP) : {}),
+        ...(exitP !== null && next ? exitStyle(next.transition.type, exitP) : {}),
+      };
       return (
-        <AbsoluteFill key={scene.id}>
+        <AbsoluteFill key={scene.id} style={transitionStyle}>
           <SceneEffects effects={scene.effects} ctx={sceneCtx}>
             <Backdrop scene={scene} theme={project.theme} frame={frame} width={width} height={height} />
             {contentScene?.layers.map((layer) => {
@@ -554,9 +584,14 @@ export const QuoteCinematic: React.FC<{ project: StudioProject }> = ({ project }
 
   return (
     <AbsoluteFill style={{ backgroundColor: project.theme.background_color, overflow: "hidden" }}>
-      {scenes}
-      <SoundBed audio={resolved.audio} />
-      <Signature project={project} frame={frame} />
+      {/* React 18 ne transmet pas le ref à AbsoluteFill (Remotion le lit en prop React 19) :
+          le div interne inset:0 porte le ref de la sonde, même repère que la composition. */}
+      <div ref={canvasRef} style={{ position: "absolute", inset: 0 }}>
+        {scenes}
+        <SoundBed audio={resolved.audio} />
+        <Signature project={project} frame={frame} />
+      </div>
+      {auditLayout && <LayoutProbe root={canvasRef} />}
     </AbsoluteFill>
   );
 };

@@ -1,5 +1,5 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { PanelRightClose, Sparkles } from "lucide-react";
 import AgentPanel from "./agent/AgentPanel";
 import { useAssistant } from "../lib/assistant";
@@ -9,9 +9,9 @@ import { useAssistant } from "../lib/assistant";
  *
  * Il occupe une colonne de la fenêtre au lieu de passer par-dessus : fermé, il
  * laisse un rail de 26 px ; ouvert, il prend 400 px et les pages se resserrent.
- * Un panneau qui masque l'Inspecteur pendant qu'on lit une proposition est
- * contre-productif — et le contenu reste monté quand il est fermé, donc la
- * conversation et le job en cours survivent au tiroir fermé.
+ * Sur l'accueil Studio, la conversation est la surface principale : le tiroir est
+ * toujours ouvert, à droite de l'aperçu vidéo. Le contenu reste monté quand il
+ * est fermé, donc la conversation et le job en cours survivent au tiroir fermé.
  *
  * Une page sans éditeur (Clips, Podcast, Réglages) ne reçoit pas de faux bouton
  * « Appliquer » : le tiroir dit où aller.
@@ -19,6 +19,9 @@ import { useAssistant } from "../lib/assistant";
 export default function AssistantDock() {
   const { open, setOpen, data, handlers, request } = useAssistant();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isHome = location.pathname === "/";
+  const expanded = isHome || open;
 
   const selectionLabel = React.useMemo(() => {
     const scene = data.selection?.sceneId;
@@ -63,17 +66,17 @@ export default function AssistantDock() {
   );
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open || isHome) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, setOpen]);
+  }, [open, isHome, setOpen]);
 
   return (
     <>
-      {!open && (
+      {!expanded && (
         <button
           onClick={() => setOpen(true)}
           className="flex w-[26px] shrink-0 flex-col items-center gap-2 border-l border-border bg-card/60 py-3 text-muted-foreground hover:text-foreground"
@@ -88,21 +91,23 @@ export default function AssistantDock() {
       <aside
         className={
           "w-[400px] max-w-[92vw] shrink-0 flex-col border-l border-border bg-card " +
-          (open ? "flex" : "hidden")
+          (expanded ? "flex" : "hidden")
         }
         aria-label="Assistant du studio"
       >
         <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
           <Sparkles size={14} className="text-primary" />
           <span className="text-sm font-medium">Assistant</span>
-          <button
-            className="ml-auto text-muted-foreground hover:text-foreground"
-            onClick={() => setOpen(false)}
-            aria-label="Fermer l'assistant"
-            title="Fermer (Échap)"
-          >
-            <PanelRightClose size={15} />
-          </button>
+          {!isHome && (
+            <button
+              className="ml-auto text-muted-foreground hover:text-foreground"
+              onClick={() => setOpen(false)}
+              aria-label="Fermer l'assistant"
+              title="Fermer (Échap)"
+            >
+              <PanelRightClose size={15} />
+            </button>
+          )}
         </header>
         <div className="shrink-0 border-b border-border px-3 py-1.5 text-[11px] leading-snug text-muted-foreground">
           {contextLabel}
@@ -116,12 +121,14 @@ export default function AssistantDock() {
             csvColumns={data.csvColumns ?? []}
             externalRequest={request}
             applyHint={applyHint}
-            visible={open}
+            visible={expanded}
             onConfigure={() => {
               setOpen(false);
-              navigate("/");
+              navigate("/cockpit");
             }}
             onApply={(candidate) => forward(handlers.current.onApply, candidate)}
+            onUndo={() => forward(handlers.current.onUndo)}
+            onRedo={() => forward(handlers.current.onRedo)}
             onLibrarySave={(candidate, label, description) =>
               forward(handlers.current.onLibrarySave, candidate, label, description)
             }

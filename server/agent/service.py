@@ -10,6 +10,7 @@ l'historique Annuler/Rétablir.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import threading
 import time
@@ -18,6 +19,7 @@ from .. import jobs, settings
 from . import capabilities, context, llm_client, proposals, retrieval, tools
 
 _LOCK = threading.Lock()
+_ACTION_LOCK = threading.Lock()
 _RECORDS: dict[str, dict] = {}
 RECORD_TTL = 3600.0
 
@@ -181,11 +183,19 @@ def run_request(job, payload: dict) -> dict:
             "texte ligne par ligne. Réponds avec type=batch_plan, ou question/unavailable. "
             "Le plan réel est calculé par le moteur du studio, pas par toi."
         )
+    elif mode == "autopilot":
+        caps_text = capabilities.autopilot_grounding(data)
+        extra = ""
     else:
         caps_text = capabilities.prompt_block(data)
         extra = tools.TOOL_DESCRIPTION
 
     media_text = _media_hint(data)
+    compact_caps = (capabilities.autopilot_grounding(data, compact=True) if mode == "autopilot"
+                    else capabilities.compact_prompt_block(data))
+    autopilot_required = ("MODE AUTOPILOTE : plan validé, puis clic Démarrer.\n" + _voices_hint()
+                          + f"\nOutils : {int(cfg.get('max_tool_calls', 3))} appels au maximum."
+                          if mode == "autopilot" else "")
     job.set_progress(3, 6, "Construction du contexte…")
     jobs.raise_if_cancelled(job)
 
@@ -203,7 +213,9 @@ def run_request(job, payload: dict) -> dict:
                 budget_tokens=budget_tokens,
                 extra_rules=extra,
                 media_text=media_text,
-                capabilities_text_compact=capabilities.compact_prompt_block(data),
+                capabilities_text_compact=compact_caps,
+                system_override=context.AUTOPILOT_RULES if mode == "autopilot" else "",
+                required_text=autopilot_required,
             )
         except context.ContextTooLarge as e:
             raise AgentUnavailable(str(e)) from e
@@ -211,6 +223,8 @@ def run_request(job, payload: dict) -> dict:
             built[-1]["content"] += (
                 "\n\nCOLONNES DU CSV (données) : " + ", ".join(csv_columns[:60])
             )
+        if project is None and mode == "design":
+            built[-1]["content"] += "\n\n" + _creation_hint(data)
         return built, ctx_meta
 
     budget_tokens = int(cfg.get("context_budget", 3000))
@@ -281,18 +295,28 @@ def run_request(job, payload: dict) -> dict:
             messages.append({"role": "user", "content": _repair_message(errors, e.kind)})
             continue
 
-        call = parsed.get("tool_call")
-        if isinstance(call, dict) and tool_calls < max_tool_calls:
-            tool_calls += 1
-            name = str(call.get("name", ""))
-            args = call.get("args") if isinstance(call.get("args"), dict) else {}
-            job.set_progress(4, 6, f"Outil de lecture : {name}…")
-            try:
-                observed = tools.execute(name, args, ctx)
-            except tools.ToolError as e:
-                observed = {"error": e.message}
-                errors.append(f"outil {name} : {e.message}")
-            messages.append({"role": "user", "content": _observation(name, observed)})
+        # Un ou plusieurs outils par tour : toutes les observations reviennent
+        # dans un seul message, donc un seul appel LLM supplémentaire.
+        batch = parsed.get("tool_calls")
+        pending = [c for c in batch if isinstance(c, dict)] if isinstance(batch, list) else []
+        if not pending and isinstance(parsed.get("tool_call"), dict):
+            pending = [parsed["tool_call"]]
+        if pending and tool_calls < max_tool_calls:
+            observations: list[str] = []
+            for call in pending:
+                if tool_calls >= max_tool_calls:
+                    break
+                tool_calls += 1
+                name = str(call.get("name", ""))
+                args = call.get("args") if isinstance(call.get("args"), dict) else {}
+                job.set_progress(4, 6, f"Outil de lecture : {name}…")
+                try:
+                    observed = tools.execute(name, args, ctx)
+                except tools.ToolError as e:
+                    observed = {"error": e.message}
+                    errors.append(f"outil {name} : {e.message}")
+                observations.append(_observation(name, observed))
+            messages.append({"role": "user", "content": "\n\n".join(observations)})
             continue
 
         try:
@@ -367,6 +391,48 @@ def _docs_budget(cfg: dict) -> int:
     return max(1200, min(9000, int(budget * llm_client.CHARS_PER_TOKEN * 0.28)))
 
 
+def _creation_hint(manifest_data: dict) -> str:
+    """Rappel non contournable quand aucun projet n'est chargé : créer, pas patcher.
+
+    Les structures (ids de scènes/calques) sont incluses : le modèle n'a pas
+    besoin d'un tour d'outil list_templates/get_template avant de créer.
+    """
+    templates = manifest_data.get("templates", [])
+    listing = "; ".join(
+        f"{t['id']}=« {t['label']} » ({t['scenes']} scènes)" for t in templates
+    ) or "aucun"
+    structures = "\n".join(capabilities.structure_lines(templates, detailed=False))[:1600]
+    return (
+        "AUCUN PROJET ACTIF — CRÉATION : réponds type=project_new, jamais project_patch. "
+        f"Modèles de bibliothèque RÉELS (seuls ces template_id sont acceptés) : {listing}. "
+        "Les operations s'appliquent au modèle choisi : cible uniquement ses scene_id/layer_id "
+        "existants, ou crée-les d'abord avec add_scene/add_text_layer. N'invente aucun identifiant.\n"
+        "STRUCTURES DES MODÈLES (ids exacts, pas besoin d'outil pour les lire) :\n" + structures
+    )
+
+
+def _voices_hint() -> str:
+    """Voix réellement prêtes : le plan ne peut pas cacher un téléchargement."""
+    from shortvideos import tts as tts_mod
+
+    from ..security import TTS_MODELS_DIR
+
+    try:
+        voices = [v for v in tts_mod.status(TTS_MODELS_DIR)["voices"] if v.get("ready")]
+    except Exception:  # noqa: BLE001 - catalogue absent : le plan se fera sans voix
+        voices = []
+    if not voices:
+        return "VOIX PRÊTES : aucune voix téléchargée — réponds voice=null (pas de voix off)."
+    listing = ", ".join(
+        f"{v['id']} ({v.get('language_name') or v.get('language') or '?'})" for v in voices[:40]
+    )
+    return (
+        "VOIX PRÊTES (seules valeurs acceptées pour voice.voice_id, toute autre est refusée) : "
+        + listing
+        + ". Choisis la voix selon la langue du script ; voice=null si aucune voix off n'est voulue."
+    )
+
+
 def _media_hint(manifest_data: dict) -> str:
     """Inventaire borné des refs utilisables : le modèle ne choisit jamais un chemin."""
     media = manifest_data.get("media", [])[:16]
@@ -390,8 +456,17 @@ def accept(proposal_id: str, current_project: dict | None, rebase: bool = False)
     proposal = record["proposal"]
     ptype = proposal["type"]
 
+    if ptype == "studio_action":
+        raise AgentUnavailable("Cette action exige sa confirmation dédiée puis Exécuter.")
+
     if ptype in {"question", "unavailable"}:
         raise AgentUnavailable("Cette proposition ne contient aucune modification applicable.")
+
+    if ptype == "autopilot_plan":
+        raise AgentUnavailable(
+            "Un plan autopilote ne s'applique pas dans l'éditeur : démarrez-le par le bouton "
+            "Démarrer (POST /api/agent/autopilot/start)."
+        )
 
     if ptype == "library_save":
         base = current_project if isinstance(current_project, dict) else record["base_project"]
@@ -464,5 +539,48 @@ def reject(proposal_id: str) -> dict:
     record = get_record(proposal_id)
     if record is None:
         return {"rejected": proposal_id, "note": "Proposition déjà expirée."}
-    record["proposal"]["status"] = "rejected"
+    with _ACTION_LOCK:
+        if record["proposal"].get("execution_job_id"):
+            raise AgentUnavailable("Une action confirmée ne peut plus être refusée ; demandez son annulation.")
+        record["proposal"]["status"] = "rejected"
     return {"rejected": proposal_id, "project_unchanged": True}
+
+
+def store_followup(proposal: dict, reply: dict, project: dict) -> None:
+    _store({"proposal": proposal, "reply": reply, "base_project": project,
+            "base_revision": proposals.revision_of(project), "created_at": time.time()})
+
+
+def execute_action(proposal_id: str, confirmation: str, project: dict | None) -> dict:
+    from . import actions
+    cfg = settings.llm_config()
+    with _ACTION_LOCK:
+        record = get_record(proposal_id)
+        if record is None:
+            raise KeyError(proposal_id)
+        proposal = record["proposal"]
+        if proposal["type"] != "studio_action":
+            raise AgentUnavailable("Cette proposition ne porte aucune action exécutable.")
+        action = proposal["action"]
+        if not hmac.compare_digest(confirmation, action["confirmation"]):
+            raise AgentUnavailable("Confirmation absente ou différente de celle affichée.")
+        if proposal["status"] == "rejected" or proposal.get("execution_job_id"):
+            raise AgentUnavailable("Action déjà lancée ou refusée : aucun double lancement.")
+        if action["name"] in {"project_review", "project_export"}:
+            if project is None:
+                raise AgentUnavailable("Projet actif absent : ouvrez le projet avant l’action.")
+            revision = proposals.revision_of(project)
+            if revision != action["context"]["project_revision"]:
+                raise RevisionConflict("Le projet a changé depuis l’audit proposé : redemandez une proposition.", revision)
+            record["base_project"] = project
+        try:
+            fresh = actions.describe(action["name"], action["params"], record["base_project"])
+            for key, value in action["context"].items():
+                if fresh["context"].get(key) != value:
+                    raise AgentUnavailable("La cible ou la configuration a changé depuis la confirmation : nouvelle proposition nécessaire.")
+        except actions.ActionError as exc:
+            raise AgentUnavailable(str(exc)) from None
+        response = actions.start(action, record, cfg)
+        proposal["execution_job_id"] = response["job_id"]
+        proposal["status"] = "accepted"
+    return response

@@ -94,6 +94,12 @@ export interface SceneBackground {
   animation: "static" | "zoom_slow" | "zoom_out";
 }
 
+/** Transition d'entree d'une scene depuis la precedente (chevauchement au rendu). */
+export interface SceneTransition {
+  type: string;
+  frames: number;
+}
+
 export interface Scene {
   id: string;
   label: string;
@@ -101,6 +107,7 @@ export interface Scene {
   hidden: boolean;
   effects?: RawEffect[];
   background: SceneBackground;
+  transition?: SceneTransition;
   layers: Layer[];
 }
 
@@ -170,6 +177,7 @@ export interface ResolvedScene {
   end_frame: number;
   hidden: boolean;
   background: SceneBackground & { media: string };
+  transition: SceneTransition;
   layers: ResolvedLayer[];
 }
 

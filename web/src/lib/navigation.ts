@@ -5,6 +5,7 @@ import {
   Gauge,
   Layers,
   Library,
+  MessageSquare,
   Mic,
   Package,
   PenTool,
@@ -40,15 +41,21 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         to: "/",
-        label: "Cockpit",
-        icon: Gauge,
-        description: "Assistant, files en cours, derniers projets et points de contrôle",
+        label: "Studio",
+        icon: MessageSquare,
+        description: "Accueil : conversation + aperçu vidéo, modifications appliquées en direct",
       },
       {
         to: "/design",
         label: "Design",
         icon: PenTool,
-        description: "Éditeur : scènes, calques, effets, aperçu Remotion, export MP4",
+        description: "Éditeur avancé : scènes, calques, effets, aperçu Remotion, export MP4",
+      },
+      {
+        to: "/cockpit",
+        label: "Cockpit",
+        icon: Gauge,
+        description: "Tableau de bord : assistant, files en cours, derniers projets et points de contrôle",
       },
     ],
   },

@@ -10,12 +10,14 @@ après un clic utilisateur.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, ConfigDict
 
 from shortvideos import schema
 
 from .. import jobs, settings
-from ..agent import llm_client, proposals, retrieval, service
+from ..agent import autopilot, llm_client, proposals, retrieval, service
+from ..security import assert_local_dir
 from ..settings import llm_config
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -35,6 +37,12 @@ class AskPayload(BaseModel):
 class AcceptPayload(BaseModel):
     project: dict | None = None
     rebase: bool = False
+
+
+class ExecutePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    confirmation: str
+    project: dict | None = None
 
 
 class CheckPayload(BaseModel):
@@ -204,6 +212,95 @@ def accept(proposal_id: str, payload: AcceptPayload) -> dict:
     return result
 
 
+@router.post("/proposals/{proposal_id}/execute")
+def execute(proposal_id: str, payload: ExecutePayload) -> dict:
+    try:
+        return service.execute_action(proposal_id, payload.confirmation, payload.project)
+    except Exception as exc:
+        raise _http_error(exc)
+
+
 @router.post("/proposals/{proposal_id}/reject")
 def reject(proposal_id: str) -> dict:
-    return service.reject(proposal_id)
+    try:
+        return service.reject(proposal_id)
+    except Exception as exc:  # noqa: BLE001 - mêmes causes HTTP que accept/execute
+        raise _http_error(exc)
+
+
+# --------------------------------------------------------------------------- #
+# Autopilote : plan validé par l'assistant, exécuté par le serveur après un clic
+# --------------------------------------------------------------------------- #
+
+class AutopilotPlanPayload(BaseModel):
+    message: str
+    history: list[dict] = []
+
+
+class AutopilotStartPayload(BaseModel):
+    proposal_id: str = ""
+    job_id: str = ""
+
+
+@router.post("/autopilot/plan")
+def autopilot_plan(payload: AutopilotPlanPayload) -> dict:
+    """Demande de plan complet (script → design → voix → export), job annulable."""
+    cfg = llm_config()
+    ready, reason = llm_client.is_ready(cfg)
+    if not ready:
+        raise HTTPException(status_code=424, detail=reason)
+    data = {
+        "message": payload.message,
+        "history": payload.history,
+        "mode": "autopilot",
+        "project": None,
+        "project_name": "",
+    }
+
+    def work(job: jobs.Job) -> dict:
+        return service.run_request(job, data)
+
+    job = jobs.create_job("agent", work)
+    return {"job_id": job.id, "status": job.status}
+
+
+@router.post("/autopilot/start")
+def autopilot_start(payload: AutopilotStartPayload) -> dict:
+    """Le clic unique : démarre le plan proposé, ou reprend un plan interrompu."""
+    try:
+        plan_id = autopilot.start(
+            proposal_id=payload.proposal_id.strip(), job_id=payload.job_id.strip()
+        )
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"job_id": plan_id, "status": "running"}
+
+
+@router.post("/autopilot/{job_id}/cancel")
+def autopilot_cancel(job_id: str) -> dict:
+    state = autopilot.cancel(job_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Plan autopilote introuvable.")
+    return state
+
+
+@router.get("/autopilot/{job_id}")
+def autopilot_status(job_id: str) -> dict:
+    state = autopilot.status(job_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Plan autopilote introuvable.")
+    return state
+
+
+@router.get("/autopilot/{job_id}/file")
+def autopilot_file(job_id: str) -> FileResponse:
+    """Vidéo finale : le nom vient de l'état persisté, jamais du client."""
+    path = autopilot.video_path(job_id)
+    if path is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Vidéo finale introuvable (plan non terminé ou fichier supprimé).",
+        )
+    return FileResponse(assert_local_dir(path), media_type="video/mp4")

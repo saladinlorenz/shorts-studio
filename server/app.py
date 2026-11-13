@@ -181,6 +181,53 @@ def _open_browser_when_ready(host: str, port: int) -> None:
     threading.Thread(target=wait_and_open, daemon=True).start()
 
 
+# Watchdog : le socket d'écoute peut mourir (WinError 64) sans que le processus
+# s'arrête. On surveille /api/health et, si le serveur ne répond plus alors qu'il
+# a répondu au moins une fois, on sort avec un code dédié : start_web.bat relance
+# alors une instance neuve. Plusieurs échecs espacés évitent de tuer un serveur
+# simplement occupé par un rendu lourd.
+WATCHDOG_INTERVAL = 15
+WATCHDOG_TIMEOUT = 10
+WATCHDOG_FAILURES = 4
+WATCHDOG_EXIT_CODE = 3
+
+
+def _start_watchdog(host: str, port: int) -> None:
+    import os
+    import threading
+    import time
+    import urllib.request
+
+    url = _browse_url(host, port) + "api/health"
+    state = {"armed": False, "failures": 0}
+
+    def loop() -> None:
+        while True:
+            time.sleep(WATCHDOG_INTERVAL)
+            try:
+                with urllib.request.urlopen(url, timeout=WATCHDOG_TIMEOUT) as response:
+                    ok = response.status == 200
+            except Exception:
+                ok = False
+            if ok:
+                state["armed"] = True
+                state["failures"] = 0
+                continue
+            if not state["armed"]:
+                continue  # démarrage lent : jamais répondu, on ne tue pas
+            state["failures"] += 1
+            if state["failures"] >= WATCHDOG_FAILURES:
+                print(
+                    f"\n[watchdog] /api/health ne répond plus ({state['failures']} checks, "
+                    f"~{state['failures'] * WATCHDOG_INTERVAL} s) : arrêt pour redémarrage "
+                    f"automatique (code {WATCHDOG_EXIT_CODE}).",
+                    flush=True,
+                )
+                os._exit(WATCHDOG_EXIT_CODE)
+
+    threading.Thread(target=loop, daemon=True, name="studio-watchdog").start()
+
+
 def main() -> None:
     import sys
 
@@ -211,6 +258,14 @@ def main() -> None:
 
     if open_browser:
         _open_browser_when_ready(host, port)
+    _start_watchdog(host, port)
+    # Un arrêt du serveur en plein plan laisse un état « running » sur disque :
+    # on reprend ces plans interrompus avant d'accepter de nouvelles requêtes.
+    from .agent import autopilot
+
+    resumed = autopilot.resume_interrupted()
+    if resumed:
+        print(f"{len(resumed)} plan(s) autopilote interrompu(s) repris au demarrage.", flush=True)
     uvicorn.run(
         app,
         host=host,

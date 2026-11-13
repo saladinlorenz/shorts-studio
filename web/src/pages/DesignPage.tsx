@@ -4,9 +4,8 @@ import { useSearchParams } from "react-router-dom";
 import { Download, FilePlus2, FolderOpen, Library, Loader2, Palette, Redo2, Save, Sparkles, Undo2, X } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { api, apiErrorMessage, type EffectsManifest, type ModelInfo, type PrepareResponse, type Project } from "../api/client";
+import { api, apiErrorMessage, type EffectsManifest, type ModelInfo } from "../api/client";
 import { COMPOSITION_INDEX, MODEL_REGISTRY } from "../remotion/registry";
-import { injectFontFaces, preloadAllFonts } from "../remotion/fonts";
 import * as edit from "./design/edit";
 import { measureProject, type TextFit } from "./design/measure";
 import { InspectorPanel, ScenesPanel, TimelineBar } from "./design/panels";
@@ -14,114 +13,49 @@ import ExportDialog from "./design/ExportDialog";
 import LibraryDialog from "./design/LibraryDialog";
 import BrandPacksDialog from "./design/BrandPacksDialog";
 import { useAssistant, usePublishAssistant } from "../lib/assistant";
+import { useProject } from "../lib/project";
 
 /**
- * Espace Design d'un projet v2.
+ * Espace Design d'un projet v2 — l'éditeur avancé.
  *
- * La page ne calcule rien de métier : elle envoie le projet édité au serveur,
- * reçoit le projet résolu (frames absolues, URLs de rendu, polices vérifiées)
- * et le donne tel quel au Remotion Player — le même objet que celui que lit le
- * navigateur de rendu. L'aperçu et l'export partagent donc la même chronologie.
+ * Le document et son historique vivent dans le ProjectProvider partagé avec la
+ * page d'accueil ; cette page ajoute les panneaux scènes/inspecteur, la mesure
+ * des débordements et le lecteur. Elle envoie le projet édité au serveur, reçoit
+ * le projet résolu (frames absolues, URLs de rendu, polices vérifiées) et le
+ * donne tel quel au Remotion Player — le même objet que celui du rendu MP4.
  */
-
-type SaveState = { kind: "idle" | "saving" | "saved" | "error"; msg: string };
-
-const HISTORY_LIMIT = 80;
 
 export default function DesignPage() {
   const [searchParams] = useSearchParams();
+  const {
+    project, name, dirty, selection, prepared, prepareError, save, notes, projectList, fontsReady,
+    canUndo, canRedo, setName, setSelection, setNotes, setSave,
+    applyEdit, undo, redo, openProject, openModel, newProject, saveNow, refreshProjects,
+  } = useProject();
 
-  const [project, setProject] = React.useState<Project | null>(null);
-  const [name, setName] = React.useState("citation");
-  const [dirty, setDirty] = React.useState(false);
-  const [selection, setSelection] = React.useState<edit.Selection>({ sceneId: null, layerId: null });
-  const [prepared, setPrepared] = React.useState<PrepareResponse | null>(null);
-  const [prepareError, setPrepareError] = React.useState("");
   const [model, setModel] = React.useState<ModelInfo | null>(null);
   const [effectCatalog, setEffectCatalog] = React.useState<EffectsManifest | null>(null);
   const [fits, setFits] = React.useState<TextFit[]>([]);
-  const [fontsReady, setFontsReady] = React.useState(false);
-  const [save, setSave] = React.useState<SaveState>({ kind: "idle", msg: "" });
-  const [notes, setNotes] = React.useState<string[]>([]);
   const [showOpen, setShowOpen] = React.useState(false);
   const [showExport, setShowExport] = React.useState(false);
   const [showLibrary, setShowLibrary] = React.useState(false);
   const [showBrands, setShowBrands] = React.useState(false);
-  const [projectList, setProjectList] = React.useState<Array<{ name: string; version: number | null }>>([]);
 
   const playerRef = React.useRef<PlayerRef>(null);
   const [playing, setPlaying] = React.useState(false);
   const [loop, setLoop] = React.useState(true);
   const [frame, setFrame] = React.useState(0);
 
-  /* ---------------- historique annulation / rétablissement ---------------- */
-
-  const past = React.useRef<Project[]>([]);
-  const future = React.useRef<Project[]>([]);
-  const gesture = React.useRef(false);
-  const gestureTimer = React.useRef(0);
-  const present = React.useRef<Project | null>(null);
-  present.current = project;
-  const [, bumpHistory] = React.useReducer((n: number) => n + 1, 0);
-
-  const applyEdit = React.useCallback((next: Project, commit: boolean) => {
-    const previous = present.current;
-    if (previous) {
-      const startGesture = !commit && !gesture.current;
-      if (commit || startGesture) {
-        past.current = [...past.current.slice(-(HISTORY_LIMIT - 1)), previous];
-        future.current = [];
-      }
-      gesture.current = commit ? false : true;
-      window.clearTimeout(gestureTimer.current);
-      if (!commit) {
-        // Un glissement (slider) trop long devient plusieurs moves d'un même geste.
-        gestureTimer.current = window.setTimeout(() => {
-          gesture.current = false;
-        }, 800);
-      }
-    }
-    setProject(next);
-    setDirty(true);
-    bumpHistory();
-  }, []);
-
-  const undo = React.useCallback(() => {
-    const previous = past.current.pop();
-    const current = present.current;
-    if (!previous || !current) return;
-    future.current = [...future.current, current];
-    gesture.current = false;
-    setProject(previous);
-    setDirty(true);
-    bumpHistory();
-  }, []);
-
-  const redo = React.useCallback(() => {
-    const next = future.current.pop();
-    const current = present.current;
-    if (!next || !current) return;
-    past.current = [...past.current, current];
-    gesture.current = false;
-    setProject(next);
-    setDirty(true);
-    bumpHistory();
-  }, []);
-
-  const canUndo = past.current.length > 0;
-  const canRedo = future.current.length > 0;
-
   /* --------------------- assistant : contexte publié par la page --------------------- */
 
-  // L'assistant n'est plus un onglet de cette page : il vit dans le tiroir global
-  // et lit ce que Design publie. Le candidat ne passe par l'éditeur qu'après le
-  // clic « Appliquer », dans l'historique Annuler/Rétablir.
   const { setOpen: showAssistant } = useAssistant();
 
   usePublishAssistant(
     { project, projectName: name, selection, mode: "design", source: "Design" },
     {
       onApply: (candidate) => applyEdit(candidate, true),
+      onUndo: undo,
+      onRedo: redo,
       onLibrarySave: (candidate, label, description) => {
         api
           .saveLibraryModel(candidate, label, description)
@@ -151,20 +85,7 @@ export default function DesignPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo]);
 
-  /* ------------------------- polices du catalogue ------------------------- */
-
-  React.useEffect(() => {
-    injectFontFaces();
-    let alive = true;
-    preloadAllFonts()
-      .then(() => alive && setFontsReady(true))
-      .catch(() => alive && setFontsReady(false));
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  /* --------------------- modèle, projet par défaut, liste --------------------- */
+  /* --------------------- modèle et catalogue d'effets --------------------- */
 
   React.useEffect(() => {
     api
@@ -182,49 +103,6 @@ export default function DesignPage() {
       .catch(() => setEffectCatalog(null));
   }, []);
 
-  React.useEffect(() => {
-    if (project) return;
-    api
-      .studioDefault("quote_cinematic")
-      .then((res) => {
-        setProject(res.project);
-        const first = res.project?.content?.scenes?.[0];
-        if (first) setSelection({ sceneId: first.id, layerId: first.layers?.[0]?.id ?? null });
-      })
-      .catch((e) => setPrepareError(apiErrorMessage(e)));
-  }, [project]);
-
-  const refreshProjects = React.useCallback(() => {
-    api
-      .listProjects()
-      .then((items) => setProjectList(items.map((i) => ({ name: i.name, version: i.version }))))
-      .catch(() => setProjectList([]));
-  }, []);
-
-  /* ------------------- préparation serveur (résolu + validé) ------------------ */
-
-  React.useEffect(() => {
-    if (!project) return;
-    let alive = true;
-    const handle = window.setTimeout(() => {
-      api
-        .studioPrepare(project)
-        .then((res) => {
-          if (!alive) return;
-          setPrepared(res);
-          setPrepareError("");
-        })
-        .catch((e) => {
-          if (!alive) return;
-          setPrepareError(apiErrorMessage(e));
-        });
-    }, 220);
-    return () => {
-      alive = false;
-      window.clearTimeout(handle);
-    };
-  }, [project]);
-
   /* ------------------------ mesure des débordements ------------------------ */
 
   React.useEffect(() => {
@@ -239,119 +117,7 @@ export default function DesignPage() {
     return () => window.clearTimeout(handle);
   }, [prepared, fontsReady]);
 
-  /* ----------------------------- sauvegarde auto ---------------------------- */
-
-  React.useEffect(() => {
-    if (!dirty || !project || !name.trim()) return;
-    const handle = window.setTimeout(() => {
-      setSave({ kind: "saving", msg: "Enregistrement automatique…" });
-      api
-        .saveProject(name.trim(), project)
-        .then(() => {
-          setDirty(false);
-          setSave({ kind: "saved", msg: `Enregistré : ${name.trim()}.json` });
-        })
-        .catch((e) => setSave({ kind: "error", msg: apiErrorMessage(e) }));
-    }, 1400);
-    return () => window.clearTimeout(handle);
-  }, [dirty, project, name]);
-
-  /* ------------------------------ sélection ------------------------------ */
-
-  React.useEffect(() => {
-    if (!project) return;
-    const scenes = edit.scenes(project);
-    if (scenes.length === 0) return;
-    const sceneStillThere = scenes.some((s: any) => s.id === selection.sceneId);
-    if (!sceneStillThere) {
-      const first = scenes[0];
-      setSelection({ sceneId: first.id, layerId: first.layers?.[0]?.id ?? null });
-      return;
-    }
-    const layerStillThere = edit.layersOf(project, selection.sceneId).some((l: any) => l.id === selection.layerId);
-    if (!layerStillThere) {
-      const layers = edit.layersOf(project, selection.sceneId);
-      setSelection({ sceneId: selection.sceneId, layerId: layers[0]?.id ?? null });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project]);
-
-  /* --------------------------- ouverture / création -------------------------- */
-
-  async function openProject(projectName: string) {
-    try {
-      const res = await api.loadProject(projectName);
-      const version = (res.project as any)?.version;
-      if (version === 1) {
-        const upgraded = await api.studioUpgrade(res.project);
-        setProject(upgraded.project);
-        setName(`${res.name}_v2`);
-        setNotes(upgraded.notes);
-        const first = upgraded.project?.content?.scenes?.[0];
-        if (first) setSelection({ sceneId: first.id, layerId: first.layers?.[0]?.id ?? null });
-      } else {
-        setProject(res.project);
-        setName(res.name);
-        setNotes([]);
-        const first = (res.project as any)?.content?.scenes?.[0];
-        if (first) setSelection({ sceneId: first.id, layerId: first.layers?.[0]?.id ?? null });
-      }
-      past.current = [];
-      future.current = [];
-      setDirty(false);
-      setShowOpen(false);
-      bumpHistory();
-      setSave({ kind: "saved", msg: `Projet « ${res.name} » ouvert.` });
-    } catch (e) {
-      setSave({ kind: "error", msg: apiErrorMessage(e) });
-    }
-  }
-
-  async function openModel(modelId: string) {
-    try {
-      const res = await api.libraryModel(modelId);
-      setProject(res.project);
-      setName(String((res.project as any).label || res.id).toLowerCase().replace(/\s+/g, "-"));
-      setNotes([]);
-      past.current = [];
-      future.current = [];
-      setDirty(false);
-      const first = (res.project as any)?.content?.scenes?.[0];
-      if (first) setSelection({ sceneId: first.id, layerId: first.layers?.[0]?.id ?? null });
-      bumpHistory();
-      setSave({ kind: "saved", msg: `Modèle « ${modelId} » chargé : vos réglages créeront un nouveau projet.` });
-    } catch (e) {
-      setSave({ kind: "error", msg: apiErrorMessage(e) });
-    }
-  }
-
-  async function newProject() {    try {
-      const res = await api.studioDefault("quote_cinematic");
-      setProject(res.project);
-      past.current = [];
-      future.current = [];
-      setDirty(false);
-      setNotes([]);
-      const first = res.project?.content?.scenes?.[0];
-      if (first) setSelection({ sceneId: first.id, layerId: first.layers?.[0]?.id ?? null });
-      bumpHistory();
-    } catch (e) {
-      setSave({ kind: "error", msg: apiErrorMessage(e) });
-    }
-  }
-
-  async function saveNow() {
-    if (!project) return;
-    setSave({ kind: "saving", msg: "Enregistrement…" });
-    try {
-      await api.saveProject(name.trim() || "citation", project);
-      setDirty(false);
-      setSave({ kind: "saved", msg: `Enregistré : ${name.trim() || "citation"}.json` });
-      refreshProjects();
-    } catch (e) {
-      setSave({ kind: "error", msg: apiErrorMessage(e) });
-    }
-  }
+  /* --------------------------- ouverture depuis l'URL -------------------------- */
 
   React.useEffect(() => {
     const projectName = searchParams.get("project");
@@ -360,11 +126,6 @@ export default function DesignPage() {
     else if (modelId) void openModel(String(modelId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function saveToLibrary() {
-    if (!project) return;
-    setShowLibrary(true);
-  }
 
   /* ------------------------------- player ------------------------------- */
 
@@ -514,7 +275,7 @@ export default function DesignPage() {
           >
             <Sparkles size={14} /> Assistant
           </Button>
-          <Button variant="ghost" size="sm" onClick={newProject}>
+          <Button variant="ghost" size="sm" onClick={() => void newProject()}>
             <FilePlus2 size={14} /> Nouveau
           </Button>
           <Button
@@ -527,14 +288,14 @@ export default function DesignPage() {
           >
             <FolderOpen size={14} /> Ouvrir
           </Button>
-          <Button variant="secondary" size="sm" onClick={saveNow} disabled={save.kind === "saving"}>
+          <Button variant="secondary" size="sm" onClick={() => void saveNow()} disabled={save.kind === "saving"}>
             {save.kind === "saving" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             Sauvegarder
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={saveToLibrary}
+            onClick={() => setShowLibrary(true)}
             disabled={!project || errors.length > 0}
             title={
               errors.length > 0
@@ -747,7 +508,7 @@ export default function DesignPage() {
                 <button
                   key={item.name}
                   className="flex items-center justify-between rounded-md border border-border px-2.5 py-1.5 text-left text-sm hover:bg-accent/60"
-                  onClick={() => void openProject(item.name)}
+                  onClick={() => void openProject(item.name).then(() => setShowOpen(false))}
                 >
                   <span className="truncate">{item.name}</span>
                   <Badge variant={item.version === 2 ? "success" : item.version === 1 ? "warning" : "outline"}>

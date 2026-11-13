@@ -401,7 +401,15 @@ export interface ProposalChange {
 
 export interface Proposal {
   id: string;
-  type: "question" | "unavailable" | "project_new" | "project_patch" | "library_save" | "batch_plan";
+  type:
+    | "question"
+    | "unavailable"
+    | "project_new"
+    | "project_patch"
+    | "library_save"
+    | "batch_plan"
+    | "autopilot_plan"
+    | "studio_action";
   summary: string;
   status: string;
   expires_at?: number;
@@ -424,7 +432,60 @@ export interface Proposal {
     fields: Array<{ key: string; label: string; type: string }>;
     notes: string;
   };
+  autopilot?: AutopilotPlan;
+  action?: {
+    name: string;
+    params: Record<string, unknown>;
+    label: string;
+    /** Impacts exacts rédigés par le serveur, à confirmer avant exécution. */
+    impact: string[];
+    confirmation: string;
+    context: Record<string, unknown>;
+  };
   sources: ProposalSource[];
+}
+
+/** Plan validé par le serveur : les 4 étapes rejouées par l'orchestrateur. */
+export interface AutopilotPlan {
+  template_id: string;
+  script: Array<Record<string, unknown>>;
+  design: Array<Record<string, unknown>>;
+  voice: { voice_id: string; speed: number; text: string } | null;
+  export: { name: string };
+  steps: Array<{ id: string; label: string }>;
+}
+
+export type AutopilotStepStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "skipped"
+  | "failed"
+  | "cancelled";
+
+export interface AutopilotStep {
+  id: string;
+  label: string;
+  status: AutopilotStepStatus;
+  message: string;
+  error: string;
+}
+
+/** État public d'un plan autopilote (GET /api/agent/autopilot/{job}). */
+export interface AutopilotState {
+  job_id: string;
+  proposal_id: string;
+  status: "running" | "done" | "error" | "cancelled" | "interrupted";
+  project_name: string;
+  steps: AutopilotStep[];
+  voice_ref: string | null;
+  video: { name: string; url: string; size_bytes: number | null; duration: number | null } | null;
+  error: string;
+  resumable: boolean;
+  created_at: number | null;
+  updated_at: number | null;
+  progress?: number;
+  message?: string;
 }
 
 export interface AgentRun {
@@ -965,11 +1026,37 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ project, rebase }),
     }),
+  // Les paramètres sont ceux de la proposition stockée, jamais des remplacements du navigateur.
+  agentExecute: (id: string, confirmation: string, project: Project | null) =>
+    request<{ job_id: string; status: string }>(`/api/agent/proposals/${encodeURIComponent(id)}/execute`, {
+      method: "POST",
+      body: JSON.stringify({ confirmation, project }),
+    }),
   agentReject: (id: string) =>
     request<{ rejected: string; project_unchanged?: boolean; note?: string }>(
       `/api/agent/proposals/${encodeURIComponent(id)}/reject`,
       { method: "POST" },
     ),
+
+  // Autopilote : un plan validé → une vidéo, démarré par un seul clic.
+  autopilotPlan: (payload: { message: string; history?: Array<{ role: string; content: string }> }) =>
+    request<{ job_id: string; status: string }>("/api/agent/autopilot/plan", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  autopilotStart: (payload: { proposal_id?: string; job_id?: string }) =>
+    request<{ job_id: string; status: string }>("/api/agent/autopilot/start", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  autopilotStatus: (jobId: string) =>
+    request<AutopilotState>(`/api/agent/autopilot/${encodeURIComponent(jobId)}`),
+  autopilotCancel: (jobId: string) =>
+    request<AutopilotState>(`/api/agent/autopilot/${encodeURIComponent(jobId)}/cancel`, {
+      method: "POST",
+    }),
+  /** URL de la vidéo finale d'un plan terminé (même origine, contrôle visuel). */
+  autopilotFileUrl: (jobId: string) => `/api/agent/autopilot/${encodeURIComponent(jobId)}/file`,
 
   deliveryStatus: (batchId: string) =>
     request<DeliveryStatus>(`/api/delivery/${encodeURIComponent(batchId)}`),
