@@ -16,6 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
+from shortvideos import broll as broll_mod
 from shortvideos import captions as captions_mod
 from shortvideos import tts as tts_mod
 
@@ -118,6 +119,25 @@ def video_path(job_id: str) -> Path | None:
     if not video:
         return None
     path = EXPORTS_DIR / safe_name(str(video["name"]))
+    return path if path.is_file() else None
+
+
+def format_path(job_id: str, name: str) -> Path | None:
+    """Fichier d'un format social derive (1:1, 16:9) d'un plan termine.
+
+    Le nom doit etre un format reellement declare par l'etat persiste : jamais
+    un chemin fourni par le client. Meme garde que ``video_path``.
+    """
+    with _LOCK:
+        entry = _RUNNING.get(job_id)
+        data = copy.deepcopy(entry["state"]) if entry is not None else None
+    if data is None:
+        data = _load_state(job_id)
+    video = (data or {}).get("video") or {}
+    formats = video.get("formats") or []
+    if not any(str(f.get("name")) == str(name) for f in formats):
+        return None
+    path = EXPORTS_DIR / safe_name(str(name))
     return path if path.is_file() else None
 
 
@@ -290,13 +310,54 @@ def _step_script(plan: dict) -> dict:
 def _step_design(plan: dict, project: dict | None) -> dict:
     if project is None:
         raise RuntimeError("Projet absent : l'étape script n'est pas terminée.")
-    if not plan["design"]:
-        return project
-    candidate, _, _ = proposals.apply_operations(project, plan["design"])
+    candidate = project
+    if plan["design"]:
+        candidate, _, _ = proposals.apply_operations(project, plan["design"])
+    candidate = _with_broll(candidate)
     errors, _ = proposals.validate_candidate(candidate)
     if errors:
         raise RuntimeError("Design refusé : " + " ; ".join(errors[:3]))
     return candidate
+
+
+def _gather_broll_assets() -> list[dict]:
+    """Visuels locaux disponibles : dossiers connectés + médias importés récents.
+
+    Même pool que list_assets/search_assets (images et vidéos), dédupliqué par
+    référence. Aucune analyse visuelle : le nom et le dossier renseignent le thème.
+    """
+    from .. import folders as folders_mod
+    from . import capabilities
+
+    assets: list[dict] = []
+    seen: set[str] = set()
+    for kind in ("image", "video"):
+        for asset in folders_mod.assets_by_kind(kind):
+            ref = asset.get("ref")
+            if ref and ref not in seen:
+                seen.add(ref)
+                assets.append(asset)
+    for asset in capabilities._media_inventory():
+        ref = asset.get("ref")
+        if asset.get("kind") in ("image", "video") and ref and ref not in seen:
+            seen.add(ref)
+            assets.append(asset)
+    return assets
+
+
+def _with_broll(candidate: dict) -> dict:
+    """B-roll par thème, best-effort : posé seulement s'il garde le projet valide.
+
+    Un média disparu entre la collecte et la validation ne doit jamais casser le
+    design : on conserve alors le projet sans B-roll (dégradé de la palette).
+    """
+    assets = _gather_broll_assets()
+    if not assets:
+        return candidate
+    brolled = broll_mod.auto_broll(candidate, assets)
+    if proposals.validate_candidate(brolled)[0]:
+        return candidate
+    return brolled
 
 
 def _step_voice(job: jobs.Job, plan: dict, project: dict | None, index: int, total: int) -> tuple[dict, str]:
@@ -335,6 +396,12 @@ def _step_voice(job: jobs.Job, plan: dict, project: dict | None, index: int, tot
     errors, _ = proposals.validate_candidate(candidate)
     if errors:
         raise RuntimeError("Voix off non applicable : " + " ; ".join(errors[:3]))
+    # Rythme cale sur la voix : la duree totale des scenes suit la narration.
+    # Fait avant les sous-titres, dont les fenetres dependent des durees de scene.
+    candidate = captions_mod.pace_to_voice(candidate, float(info.get("duration", 0.0)), fps=fps)
+    errors, _ = proposals.validate_candidate(candidate)
+    if errors:
+        raise RuntimeError("Rythme non applicable : " + " ; ".join(errors[:3]))
     if cues:
         candidate = captions_mod.overlay_captions(candidate, cues, fps=fps)
         errors, _ = proposals.validate_candidate(candidate)
@@ -364,12 +431,49 @@ def _step_export(job: jobs.Job, plan: dict, project: dict | None, state: dict, i
         project, corrected = _auto_correct(job, project, out_path, index, total)
         if corrected is not None:
             info = corrected
+    made = _derive_formats(job, out_path)
+    formats = [
+        {
+            "ratio": f["ratio"], "name": f["name"],
+            "url": f"/api/agent/autopilot/{state['job_id']}/format/{f['name']}",
+            "size_bytes": f["size_bytes"], "width": f["width"], "height": f["height"],
+        }
+        for f in made
+    ]
     return {
         "name": name,
         "url": f"/api/agent/autopilot/{state['job_id']}/file",
         "size_bytes": info.get("size_bytes"),
         "duration": info.get("duration"),
+        "formats": formats,
     }, project
+
+
+def _derive_formats(job: jobs.Job, out_path: Path) -> list[dict]:
+    """Livraison multi-formats : 1:1 et 16:9 recadres depuis le master 9:16.
+
+    Best-effort : un master illisible ou un format rate ne casse pas l'export
+    (le master reste livre). L'annulation remonte et nettoie les formats deja
+    produits ; le master, lui, a deja ete publie par l'etape de rendu.
+    """
+    from shortvideos import delivery as delivery_mod
+    from shortvideos.probe import ProbeError, probe_mp4
+
+    try:
+        probe_mp4(str(out_path))
+    except (ProbeError, OSError, ValueError):
+        return []
+    stem = out_path.stem
+    expected = [out_path.parent / f"{stem}-{suffix}.mp4" for suffix in ("1x1", "16x9")]
+    try:
+        return delivery_mod.derive_social_formats(
+            out_path, out_path.parent, stem,
+            cancel=lambda: jobs.raise_if_cancelled(job),
+        )
+    except jobs.JobCancelled:
+        for path in expected:
+            path.unlink(missing_ok=True)
+        raise
 
 
 def _render_mp4(job: jobs.Job, project: dict, out_path: Path, index: int, total: int) -> dict:

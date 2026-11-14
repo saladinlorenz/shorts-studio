@@ -560,4 +560,5 @@ def read_chunk(chunk_id: int) -> dict:
 
 
 def skills_path_of(rel: str) -> Path:
-    return SKILLS_DIR / rel
+    """Chemin disque d'un document du catalogue (paquet Remotion ou montage)."""
+    return skills_mod.document_path(rel)

@@ -219,3 +219,68 @@ def make_thumbnail(
     tmp.replace(out)
     result["path"] = str(out)
     return result
+
+
+# Profils sociaux derives du master 9:16 : recadrage centre, sans bord noir.
+SOCIAL_FORMATS = (
+    {"ratio": "1:1", "suffix": "1x1", "width": 1080, "height": 1080},
+    {"ratio": "16:9", "suffix": "16x9", "width": 1920, "height": 1080},
+)
+
+
+def derive_social_formats(master_path, out_dir, stem, *, cancel=None) -> list[dict]:
+    """Derive les formats sociaux 1:1 et 16:9 du master, sans re-rendu Remotion.
+
+    Recadrage centre « cover » (scale-increase + crop) : aucun bord noir, le
+    sujet reste au centre. La video est re-encodee (libx264 crf 20), l'audio
+    deja normalise du master est copie tel quel. Best-effort : un format rate
+    n'empeche pas les autres, et le master n'est jamais modifie. ``cancel``
+    (leve JobCancelled) est respecte entre chaque format ; les provisoires sont
+    nettoyes. Retourne ``[{ratio, name, path, size_bytes, width, height}]``.
+    """
+    src = Path(master_path)
+    out_dir = Path(out_dir)
+    produced: list[dict] = []
+    if not src.is_file():
+        return produced
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    for fmt in SOCIAL_FORMATS:
+        if cancel is not None:
+            cancel()
+        width, height = fmt["width"], fmt["height"]
+        name = f"{stem}-{fmt['suffix']}.mp4"
+        out = out_dir / name
+        tmp = out_dir / f"{stem}-{fmt['suffix']}.part.mp4"
+        vf = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+        cmd = [
+            ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+            "-i", str(src),
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            str(tmp),
+        ]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except Exception:  # noqa: BLE001 - ffmpeg absent/tue : ce format est saute
+            tmp.unlink(missing_ok=True)
+            continue
+        if proc.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+            tmp.unlink(missing_ok=True)
+            continue
+        if cancel is not None:
+            try:
+                cancel()
+            except Exception:
+                tmp.unlink(missing_ok=True)
+                raise
+        if out.exists():
+            out.unlink()
+        tmp.replace(out)
+        produced.append({
+            "ratio": fmt["ratio"], "name": name, "path": str(out),
+            "size_bytes": out.stat().st_size, "width": width, "height": height,
+        })
+    return produced

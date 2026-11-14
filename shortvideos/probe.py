@@ -72,3 +72,18 @@ def duration_ffmpeg(path: str) -> float | None:
 def has_ffprobe() -> bool:
     """True si ffprobe est disponible (verifie avant de s'en servir)."""
     return shutil.which("ffprobe") is not None
+
+
+def has_audio_stream(path: str) -> bool:
+    """True si le fichier contient au moins une piste audio.
+
+    Meme constat que ``duration_ffmpeg`` : pas de ffprobe, on parse la sortie
+    de ``ffmpeg -i`` (stderr). Sert a ne lancer la normalisation loudness que
+    sur les renders qui portent vraiment du son.
+    """
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    result = subprocess.run(
+        [ffmpeg, "-hide_banner", "-i", path],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    return bool(re.search(r"Stream #.*Audio:", result.stderr or ""))

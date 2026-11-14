@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from .security import ROOT, SKILLS_DIR, assert_local_dir
+from .security import MONTAGE_DIR, ROOT, SKILLS_DIR, assert_local_dir
 
 BUNDLE = SKILLS_DIR / "remotion-best-practices"
 # bible francaise fournie par l'utilisateur (voir skills/remotion/PROVENANCE.md)
@@ -24,6 +24,15 @@ BIBLE_ID = "remotion-bible"
 # guide des effets video, fourni par l'utilisateur et decoupe en fiches
 EFFECTS = SKILLS_DIR / "effects"
 EFFECTS_ID = "remotion-effects-fr"
+# grammaire de production importee d'OpenMontage (voir skills/montage/PROVENANCE.md)
+MONTAGE = MONTAGE_DIR
+MONTAGE_ID = "montage-production"
+# prefixe virtuel des chemins du paquet montage : « montage/pipeline_defs/... »
+MONTAGE_PREFIX = "montage"
+MONTAGE_SUFFIXES = {".md", ".yaml", ".yml"}
+MAX_PIPELINE_DESC = 600
+MAX_PIPELINE_EXCERPT = 4_000
+MAX_STAGE_TOOLS = 12
 
 # Garde-fou : un document fait quelques kilo-octets ; on refuse les derives.
 MAX_DOC_CHARS = 200_000
@@ -45,6 +54,19 @@ def _frontmatter(text: str) -> dict[str, str]:
 
 def _rel(path: Path) -> str:
     return path.relative_to(SKILLS_DIR).as_posix()
+
+
+def _montage_rel(path: Path) -> str:
+    """Chemin virtuel d'un fichier du paquet montage : « montage/<relatif> »."""
+    return f"{MONTAGE_PREFIX}/{path.relative_to(MONTAGE).as_posix()}"
+
+
+def _montage_path(rel_path: str) -> Path | None:
+    """Resout un chemin virtuel « montage/... » ; None si ce n'en est pas un."""
+    prefix = MONTAGE_PREFIX + "/"
+    if not rel_path.startswith(prefix):
+        return None
+    return MONTAGE / rel_path[len(prefix):]
 
 
 def _docs_of(base: Path) -> list[str]:
@@ -113,6 +135,116 @@ def _effects_entry() -> dict | None:
     }
 
 
+def _montage_entry() -> dict | None:
+    """Grammaire de production (pipelines YAML + directeurs d'etape).
+
+    Le README du dossier sert d'entree ; tout le reste est indexe comme
+    documents. Les manifestes .yaml sont acceptes : ce sont eux qui portent
+    les etapes, les outils autorises et les criteres de revue.
+    """
+    if not MONTAGE.is_dir():
+        return None
+    readme = MONTAGE / "README.md"
+    if not readme.is_file():
+        return None
+    meta = _frontmatter(readme.read_text(encoding="utf-8", errors="replace"))
+    docs = [
+        path
+        for path in _montage_docs()
+        if path != _montage_rel(readme)
+    ]
+    if not docs:
+        return None
+    return {
+        "id": MONTAGE_ID,
+        "title": "Montage (pipelines de production)",
+        "description": meta.get("description") or (
+            "Choisir un pipeline, produire brief, plan de scenes, manifeste "
+            "d'assets et decisions de montage avant tout rendu."
+        ),
+        "version": meta.get("version", ""),
+        "entry": _montage_rel(readme),
+        "docs": docs,
+    }
+
+
+def _montage_docs() -> list[str]:
+    """Chemins relatifs des fiches et manifestes du paquet montage."""
+    if not MONTAGE.is_dir():
+        return []
+    return sorted(
+        _montage_rel(path)
+        for path in MONTAGE.rglob("*")
+        if path.is_file() and path.suffix.lower() in MONTAGE_SUFFIXES
+    )
+
+
+def _yaml_data(text: str) -> dict | None:
+    """Charge un manifeste YAML ; None si PyYAML est absent ou le fichier invalide."""
+    try:
+        import yaml  # noqa: PLC0415 - dependance optionnelle, chargee a l'usage
+    except ImportError:
+        return None
+    try:
+        data = yaml.safe_load(text)
+    except Exception:  # noqa: BLE001 - un manifeste casse ne doit pas tuer l'outil
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def montage_pipelines() -> list[dict]:
+    """Manifestes de pipeline lus sur disque, resumes et bornes.
+
+    Chaque entree decrit les etapes, l'artefact produit par chacune et les
+    outils autorises : c'est le contrat que l'assistant doit suivre avant de
+    proposer un montage. Aucun chemin ne vient d'une requete.
+    """
+    if not MONTAGE.is_dir():
+        return []
+    base = MONTAGE / "pipeline_defs"
+    if not base.is_dir():
+        return []
+    result: list[dict] = []
+    for path in sorted(base.glob("*.yaml")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        data = _yaml_data(text)
+        item: dict = {"id": path.stem, "source": _montage_rel(path)}
+        if data is None:
+            item["parsed"] = False
+            item["excerpt"] = text[:MAX_PIPELINE_EXCERPT]
+            result.append(item)
+            continue
+        orchestration = data.get("orchestration") or {}
+        stages = []
+        for stage in data.get("stages") or []:
+            if not isinstance(stage, dict):
+                continue
+            stages.append(
+                {
+                    "name": stage.get("name", ""),
+                    "skill": stage.get("skill", ""),
+                    "produces": list(stage.get("produces") or []),
+                    "approval": bool(stage.get("human_approval_default")),
+                    "tools": list(stage.get("tools_available") or [])[:MAX_STAGE_TOOLS],
+                }
+            )
+        item.update(
+            {
+                "parsed": True,
+                "name": data.get("name") or path.stem,
+                "category": data.get("category", ""),
+                "stability": data.get("stability", ""),
+                "description": " ".join(
+                    str(data.get("description") or "").split()
+                )[:MAX_PIPELINE_DESC],
+                "budget_default_usd": orchestration.get("budget_default_usd"),
+                "stages": stages,
+            }
+        )
+        result.append(item)
+    return result
+
+
 def list_skills() -> list[dict]:
     """Routeur du paquet d'abord, puis une entree par competence, puis les fiches francises."""
     if not is_installed():
@@ -129,6 +261,9 @@ def list_skills() -> list[dict]:
     effects = _effects_entry()
     if effects:
         entries.append(effects)
+    montage = _montage_entry()
+    if montage:
+        entries.append(montage)
     return entries
 
 
@@ -139,21 +274,41 @@ def find_skill(skill_id: str) -> dict:
     raise HTTPException(status_code=404, detail="Competence inconnue.")
 
 
-def read_document(rel_path: str) -> dict:
-    """Contenu d'un document markdown du paquet, chemin borne au paquet."""
+def document_path(rel_path: str) -> Path:
+    """Chemin disque d'un document du catalogue, borne au paquet qui le declare.
+
+    Les chemins « montage/... » sont resolus dans ``skills/montage`` ; tous les
+    autres restent dans ``skills/remotion``. Aucun chemin arbitraire.
+    """
     if not rel_path:
         raise HTTPException(status_code=400, detail="Chemin de document requis.")
-    candidate = assert_local_dir(SKILLS_DIR / rel_path)
-    if candidate.suffix.lower() != ".md" or not candidate.is_file():
+    montage_target = _montage_path(rel_path)
+    if montage_target is not None:
+        base = MONTAGE
+        candidate = montage_target
+        allowed = MONTAGE_SUFFIXES
+    else:
+        base = SKILLS_DIR
+        candidate = SKILLS_DIR / rel_path
+        allowed = {".md"}
+    candidate = assert_local_dir(candidate)
+    if candidate.suffix.lower() not in allowed or not candidate.is_file():
         raise HTTPException(status_code=404, detail="Document de competence introuvable.")
     try:
-        candidate.relative_to(SKILLS_DIR.resolve())
+        candidate.relative_to(base.resolve())
     except ValueError:  # pragma: no cover - assert_local_dir protege deja
         raise HTTPException(status_code=400, detail="Chemin hors du paquet de competences.")
+    return candidate
+
+
+def read_document(rel_path: str) -> dict:
+    """Contenu d'un document du paquet (.md, .yaml), chemin borne au paquet."""
+    candidate = document_path(rel_path)
     text = candidate.read_text(encoding="utf-8", errors="replace")
     truncated = len(text) > MAX_DOC_CHARS
+    label = rel_path if _montage_path(rel_path) is not None else _rel(candidate)
     return {
-        "path": _rel(candidate),
+        "path": label,
         "content": text[:MAX_DOC_CHARS],
         "chars": len(text),
         "truncated": truncated,
@@ -224,50 +379,62 @@ def provenance() -> dict:
     versions = {
         e["version"]
         for e in list_skills()
-        if e["version"] and e["id"] not in {BIBLE_ID, EFFECTS_ID}
+        if e["version"] and e["id"] not in {BIBLE_ID, EFFECTS_ID, MONTAGE_ID}
     }
+    sources = [
+        {
+            "id": "remotion-best-practices",
+            "source": "https://github.com/remotion-dev/skills",
+            "licence": "inconnue",
+            "note": (
+                "Aucun fichier LICENSE dans le depot (main/LICENSE -> 404, "
+                "API GitHub -> « license: null ») : licence non etablie, "
+                "donc non validee ici."
+            ),
+        },
+        {
+            "id": BIBLE_ID,
+            "source": "fourni par l'utilisateur (archive « files (4).zip », 2026-11-02)",
+            "licence": "non precisee",
+            "note": (
+                "Memoire de travail redigee pour le projet ; les noms d'API "
+                "cites ont ete confrontes aux fichiers installes. La liste des "
+                "paquets @remotion/* depasse l'outillage reel du projet, d'ou "
+                "le bloc ETAT DU PROJET injecte dans le contexte."
+            ),
+        },
+        {
+            "id": EFFECTS_ID,
+            "source": "fourni par l'utilisateur (« Les meilleurs effets vidéo avec "
+            "Remotion.md », 2026-11-03)",
+            "licence": "non precisee",
+            "note": (
+                "Guide d'effets decoupe en 10 fiches sans modification du texte "
+                "(titres remontes d'un niveau) ; l'original reste dans le "
+                "telechargement de l'utilisateur. Les paquets @remotion/* cites "
+                "depassent l'outillage installe (seuls remotion, @remotion/cli et "
+                "@remotion/player le sont), et le guide documente Remotion 4.x : "
+                "le bloc ETAT DU PROJET et la fiche 10 « Compatibilite entre "
+                "versions » font foi avant toute proposition de code."
+            ),
+        },
+        {
+            "id": MONTAGE_ID,
+            "source": "https://github.com/OpenMontageInc/OpenMontage @ fecb9a1 (2026-11-08)",
+            "licence": "AGPL-3.0",
+            "note": (
+                "Copie sans modification des manifestes de pipeline, des "
+                "directeurs d'etape, des fiches core/creative/meta et des "
+                "playbooks de style. Aucun code executable n'est copie : le "
+                "depot reste hors du studio. Voir skills/montage/PROVENANCE.md."
+            ),
+        },
+    ]
     return {
         "folder": _rel(SKILLS_DIR),
         "folder_path": str(SKILLS_DIR),
         "version": ", ".join(sorted(versions)),
-        "sources": [
-            {
-                "id": "remotion-best-practices",
-                "source": "https://github.com/remotion-dev/skills",
-                "licence": "inconnue",
-                "note": (
-                    "Aucun fichier LICENSE dans le depot (main/LICENSE -> 404, "
-                    "API GitHub -> « license: null ») : licence non etablie, "
-                    "donc non validee ici."
-                ),
-            },
-            {
-                "id": BIBLE_ID,
-                "source": "fourni par l'utilisateur (archive « files (4).zip », 2026-11-02)",
-                "licence": "non precisee",
-                "note": (
-                    "Memoire de travail redigee pour le projet ; les noms d'API "
-                    "cites ont ete confrontes aux fichiers installes. La liste des "
-                    "paquets @remotion/* depasse l'outillage reel du projet, d'ou "
-                    "le bloc ETAT DU PROJET injecte dans le contexte."
-                ),
-            },
-            {
-                "id": EFFECTS_ID,
-                "source": "fourni par l'utilisateur (« Les meilleurs effets vidéo avec "
-                "Remotion.md », 2026-11-03)",
-                "licence": "non precisee",
-                "note": (
-                    "Guide d'effets decoupe en 10 fiches sans modification du texte "
-                    "(titres remontes d'un niveau) ; l'original reste dans le "
-                    "telechargement de l'utilisateur. Les paquets @remotion/* cites "
-                    "depassent l'outillage installe (seuls remotion, @remotion/cli et "
-                    "@remotion/player le sont), et le guide documente Remotion 4.x : "
-                    "le bloc ETAT DU PROJET et la fiche 10 « Compatibilite entre "
-                    "versions » font foi avant toute proposition de code."
-                ),
-            },
-        ],
+        "sources": sources,
         "licence": "inconnue",
         "licence_note": (
             "Au moins une source n'a pas de licence etablie : le dossier est un "

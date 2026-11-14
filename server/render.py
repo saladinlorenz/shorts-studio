@@ -24,6 +24,8 @@ import time
 import uuid
 from pathlib import Path
 
+import imageio_ffmpeg
+
 from shortvideos import resolve as resolve_mod
 from shortvideos import schema
 
@@ -152,6 +154,8 @@ def render_project_to_mp4(job: Job, project: dict, out_path: Path) -> dict:
         if not out_path.exists() or out_path.stat().st_size == 0:
             raise RuntimeError("Le rendu n'a produit aucun fichier.")
 
+        normalized = _normalize_loudness(job, out_path)
+
         from shortvideos.probe import probe_mp4
 
         info = probe_mp4(str(out_path))
@@ -159,6 +163,7 @@ def render_project_to_mp4(job: Job, project: dict, out_path: Path) -> dict:
         info["size_bytes"] = out_path.stat().st_size
         info["composition"] = composition
         info["frames_expected"] = total_seen
+        info["loudness_normalized"] = normalized
         return info
     finally:
         props_path.unlink(missing_ok=True)
@@ -173,6 +178,76 @@ def _terminate(proc: subprocess.Popen) -> None:
             proc.kill()
         except OSError:
             pass
+
+
+LOUDNORM_FILTER = "loudnorm=I=-14:TP=-1.5:LRA=11"
+LOUDNORM_TIMEOUT_SECONDS = 180.0
+
+
+def _normalize_loudness(job: Job, out_path: Path) -> bool:
+    """Loudness pro du mix final, sans re-rendu video.
+
+    Cible -14 LUFS / -1.5 dBTP (reseaux sociaux) puis ``aresample=48000`` :
+    loudnorm surechantillonne en interne a 192 kHz, on revient a 48 kHz pour
+    l'AAC. La video est copiee (``-c:v copy``), seule la piste audio est
+    refiltree. Best-effort : un echec garde le render original et ne casse pas
+    l'export. Retourne True si la normalisation a ete appliquee.
+    """
+    from shortvideos.probe import has_audio_stream
+
+    try:
+        if not has_audio_stream(str(out_path)):
+            return False
+    except (OSError, RuntimeError):
+        return False
+
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    temp = out_path.with_name(out_path.stem + ".loudnorm.mp4")
+    cmd = [
+        ffmpeg, "-hide_banner", "-y", "-i", str(out_path),
+        "-c:v", "copy",
+        "-af", f"{LOUDNORM_FILTER},aresample=48000",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
+        str(temp),
+    ]
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            cmd, cwd=str(WEB_DIR), env=_env(),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace",
+        )
+        job.result_process = proc
+        deadline = time.monotonic() + LOUDNORM_TIMEOUT_SECONDS
+        while True:
+            if job.cancel_event.is_set():
+                raise JobCancelled()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            try:
+                proc.communicate(timeout=min(0.25, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                pass
+        if job.cancel_event.is_set():
+            raise JobCancelled()
+        if proc.returncode != 0:
+            return False
+        if not temp.exists() or temp.stat().st_size == 0:
+            return False
+        os.replace(temp, out_path)
+        return True
+    except JobCancelled:
+        raise
+    except (OSError, subprocess.SubprocessError):
+        return False
+    finally:
+        job.result_process = None
+        if proc is not None and proc.poll() is None:
+            _terminate(proc)
+        temp.unlink(missing_ok=True)
 
 
 FRAME_TIMEOUT_SECONDS = 120.0

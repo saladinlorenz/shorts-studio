@@ -240,7 +240,9 @@ export default function AgentPanel({
       }
       if (proposal.type === "project_patch" || proposal.type === "project_new" || proposal.type === "library_save" || proposal.type === "batch_plan") {
         void acceptProposal(target, false);
-      } else if (proposal.type === "studio_action" && proposal.action?.confirmation) {
+      } else if (proposal.type === "studio_action" && proposal.action?.confirmation
+                 && proposal.action.name !== "image_generate") {
+        // image_generate envoie le prompt à un service tiers : clic dédié obligatoire, jamais automatique.
         void executeActionFor(target, proposal.action.confirmation);
       } else if (proposal.type === "autopilot_plan") {
         void startAutopilotFor(target);
@@ -378,6 +380,12 @@ export default function AgentPanel({
   const warnings = proposal?.warnings || [];
   const validationErrors = proposal?.validation?.errors || [];
   const isProjectChange = proposal?.type === "project_patch" || proposal?.type === "project_new";
+  const imageActionPending =
+    proposal?.type === "studio_action" &&
+    proposal.action?.name === "image_generate" &&
+    proposal.validation?.state === "valid" &&
+    proposal.status !== "accepted" &&
+    !actionActive;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -563,6 +571,17 @@ export default function AgentPanel({
                     <li key={index}>{impact}</li>
                   ))}
                 </ul>
+                {imageActionPending && (
+                  <Button
+                    size="sm"
+                    className="mt-1 h-7 gap-1 text-xs"
+                    onClick={() => {
+                      if (run && proposal.action) void executeActionFor(run, proposal.action.confirmation);
+                    }}
+                  >
+                    <Sparkles size={12} /> Générer l'image
+                  </Button>
+                )}
               </div>
             )}
 

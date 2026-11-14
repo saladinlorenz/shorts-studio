@@ -479,7 +479,13 @@ export interface AutopilotState {
   project_name: string;
   steps: AutopilotStep[];
   voice_ref: string | null;
-  video: { name: string; url: string; size_bytes: number | null; duration: number | null } | null;
+  video: {
+    name: string;
+    url: string;
+    size_bytes: number | null;
+    duration: number | null;
+    formats?: { ratio: string; name: string; url: string; size_bytes: number; width: number; height: number }[];
+  } | null;
   error: string;
   resumable: boolean;
   created_at: number | null;
@@ -968,6 +974,8 @@ export const api = {
     request<JobSnapshot>(`/api/exports/${jobId}/cancel`, { method: "POST" }),
   /** URL de relecture d'un export terminé (pour contrôle visuel du rendu). */
   exportFileUrl: (jobId: string) => `/api/exports/${encodeURIComponent(jobId)}/file`,
+  /** URL de relecture d'un montage footage terminé (action montage_render). */
+  montageFileUrl: (jobId: string) => `/api/montage/${encodeURIComponent(jobId)}/file`,
 
   // Réglages
   getSettings: () => request<SettingsPublic>("/api/settings"),
@@ -1057,6 +1065,9 @@ export const api = {
     }),
   /** URL de la vidéo finale d'un plan terminé (même origine, contrôle visuel). */
   autopilotFileUrl: (jobId: string) => `/api/agent/autopilot/${encodeURIComponent(jobId)}/file`,
+  /** URL d'un format social dérivé (1:1, 16:9) d'un plan terminé. */
+  autopilotFormatUrl: (jobId: string, name: string) =>
+    `/api/agent/autopilot/${encodeURIComponent(jobId)}/format/${encodeURIComponent(name)}`,
 
   deliveryStatus: (batchId: string) =>
     request<DeliveryStatus>(`/api/delivery/${encodeURIComponent(batchId)}`),

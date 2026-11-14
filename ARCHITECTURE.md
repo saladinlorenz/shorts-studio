@@ -435,10 +435,10 @@ youtube_clipper\
 | --- | --- | --- | --- |
 | `llm_client.py` | 456 | client **OpenAI-compatible** en `httpx` : `chat(messages, …)` avec streaming optionnel, `check_connection()`, `list_models()`, `endpoint_of()`, `_headers()` (clé + `X-PIN`), `CHARS_PER_TOKEN = 3` pour l'estimation, `ChatResult(text, model, latency_ms, tokens)` | lit les réglages serveur ; **aucun** écrit |
 | `capabilities.py` | 467 | construit le **manifeste des capacités réelles** depuis le registre de compositions, la bibliothèque, `schema.py`, `effects.py` (**les 25 effets du catalogue, `_effects_brief()` / `_effects_lines()`**), `fontCatalog.json`, `web/package.json` ; `prompt_block()`, `compact_prompt_block()`, `production_prompt_block()` | lit le disque et les modules ; renvoie des chaînes bornées |
-| `retrieval.py` | 563 | index FTS5 `knowledge/agent_index.sqlite3` : `split_sections()`, `_fold()` (retrait des accents pour la recherche), tables `docs`/`chunks`/`chunks_fts`/`meta`, `build()`, `search()`, 110 documents / 548 sections | **écrit** `knowledge/agent_index.sqlite3` |
+| `retrieval.py` | 563 | index FTS5 `knowledge/agent_index.sqlite3` : `split_sections()`, `_fold()` (retrait des accents pour la recherche), tables `docs`/`chunks`/`chunks_fts`/`meta`, `build()`, `search()`, ~290 documents / 2 300 sections (paquet montage inclus) | **écrit** `knowledge/agent_index.sqlite3` |
 | `context.py` | 421 | assemblage du **prompt borné** : rôle, interdits, manifeste, protocole JSON, contexte (projet réssumé ou colonnes CSV), documents ; troncature json → outline → compact ; `PROTOCOL` décrit le contrat de réponse | appelle `capabilities`, `retrieval` |
 | `proposals.py` | 837 | **contrat** : parsing de la réponse, validation typée (`project_patch`, `project_new`, `library_save`, `batch_plan`, `knowledge_answer`, `none`), liste blanche de clés, **`set_effects` borné au catalogue `shortvideos/effects.py`**, `state` = ok/warning/error, révision, détection de conflit (le projet a bougé), `accept()` | registre en mémoire TTL 1 h |
-| `tools.py` | 566 | 20 outils de lecture (`READ_TOOLS`), 6 outils de proposition, 4 outils « exécutables uniquement par l'utilisateur » ; `describe()`, `execute(name, args, ctx)` avec bornes (`MAX_SEARCH_RESULTS=8`, `MAX_ASSETS=60`, `MAX_ROWS_PREVIEW=12`, `MAX_TEMPLATE_CHARS=12 000`) | lit les modules serveur ; **n'écrit jamais** (sauf `scan_media_folder`, explicitement demandé) |
+| `tools.py` | 566 | 22 outils de lecture (`READ_TOOLS`), 6 outils de proposition, 4 outils « exécutables uniquement par l'utilisateur » ; `describe()`, `execute(name, args, ctx)` avec bornes (`MAX_SEARCH_RESULTS=8`, `MAX_ASSETS=60`, `MAX_ROWS_PREVIEW=12`, `MAX_TEMPLATE_CHARS=12 000`, `MAX_PIPELINE_SPECS=20`) | lit les modules serveur ; **n'écrit jamais** (sauf `scan_media_folder`, explicitement demandé) |
 | `service.py` | 468 | orchestration en 6 étapes d'un `Job` : contexte → appel → outil ou contrat → réparation (×2) → validation → proposition ; self-heal ×0.65 du budget si le contexte était trop gros (`KIND_CONTEXT`) ; `RECORD_TTL = 3600`, `_MANIFEST_TTL = 30` | `api/agent.py` ; écrit dans `knowledge/` via retrieval |
 
 ### 4.6 `shortvideos/` — moteur métier (5 183 lignes, hors `__init__.py`)
@@ -582,7 +582,7 @@ tests\
 | `batch/manifests/<id>-<nom>.<json\|csv>` | JSON / CSV (BOM `utf-8-sig`) | `queue.write_manifest()` | fiche de livraison d'un lot |
 | `batch/deliveries/<id>-<nom>.zip` | ZIP | `server/delivery.py` (page Livraison) | paquet client : `videos/*.mp4`, `subtitles/*.srt`, `thumbnails/*.png`, `manifeste.json`, `manifeste.csv`, `LISEZ-MOI.txt` ; écriture via `<...>.part.zip` puis remplacement atomique |
 | `batch/deliveries/<id>-<nom>.package.json` | JSON | `server/delivery.py` | état du paquet : date de préparation, nombre de vidéos / sous-titres / miniatures, avertissements (miniature ratée, ligne sans média) ; **un paquet sans ce fichier est considéré comme absent** |
-| `knowledge/agent_index.sqlite3` | SQLite | `agent/retrieval.py` | index FTS5 des connaissances (110 documents / 548 sections, 1,6 Mo) |
+| `knowledge/agent_index.sqlite3` | SQLite | `agent/retrieval.py` | index FTS5 des connaissances (~290 documents / 2 300 sections, ~6 Mo, paquet montage inclus) |
 | `server/settings.json` | JSON plat | `settings.py` | `host`, `port`, `groq_api_key` et les 18 clés `llm_*` — **jamais renvoyées au navigateur** |
 | `clips/<sid>/` | MP4, SRT, JSON | `api/clips.py` | session : vidéo téléchargée, transcription, clips extraits |
 | `downloads/` | binaire | `downloader.py` | téléversements temporaires yt-dlp |
@@ -1354,12 +1354,12 @@ la proposition ne lance rien.
 `rebase` obligatoire — **on n'écrase pas des modifications récentes**. `reject(id)` purgé le
 registre. TTL 1 h, registre en mémoire, aucune donnée persistée.
 
-### 9.6 Les 31 outils (`server/agent/tools.py:34-77`)
+### 9.6 Les 32 outils (`server/agent/tools.py:34-80`)
 
-| Famille | Outils de lecture (21, utilisables par le modèle) |
+| Famille | Outils de lecture (22, utilisables par le modèle) |
 | --- | --- |
 | connaissances & capacités | `get_capabilities`, `search_knowledge`, `read_knowledge` |
-| design & bibliothèque | `get_current_project`, `list_templates`, `get_template`, `list_projects`, `list_fonts`, **`list_effects`** |
+| design & bibliothèque | `get_current_project`, `list_templates`, `get_template`, `list_projects`, `list_fonts`, **`list_effects`**, **`get_montage_pipelines`**, **`validate_montage`** |
 | médias | `list_assets`, `search_assets`, `get_asset_provenance`, `list_media_folders`, `scan_media_folder` *(uniquement sur demande explicite de l'utilisateur)* |
 | production | `get_batch_fields`, `get_csv_preview`, `compute_batch_plan`, `get_batch_status`, `get_queue_status` |
 | clips & podcast | `get_clips_sessions`, `get_podcast_stats` |
@@ -1389,7 +1389,8 @@ d'un export sans clic utilisateur.
 le guide des effets (`effects/`, 1 index + 10 fiches, découpé **verbatim** par
 `tools/split_effects_guide.py`, qui compare chaque fiche à sa section d'origine).
 `retrieval.py` en tire l'index FTS5 `knowledge/agent_index.sqlite3` — **110 documents,
-548 sections** à la construction du 2026-11-03, 1,6 Mo. Le guide cite beaucoup de paquets
+548 sections** à la construction du 2026-11-03, 1,6 Mo (≈ 290 documents / 2 300 sections
+depuis l'ajout du paquet montage, §9.11). Le guide cite beaucoup de paquets
 `@remotion/*` non installés : `context.py` réinjecte donc un bloc **ETAT DU PROJET** relu dans
 `web/package.json` à chaque demande, pour que l'assistant ne propose pas un paquet absent.
 `skills/remotion/PROVENANCE.md` consigne source, version, méthode et état de licence.
@@ -1455,6 +1456,56 @@ aucun lot, ne télécharge aucun fichier et n'appelle aucune route de rendu.
 - les réponses LLM **ne sont pas journalisées** ; les clés ne sortent jamais du serveur ;
 - une erreur de contrat est renvoyée **telle quelle** au modèle pour réparation, puis à
   l'utilisateur en clair si elle persiste — jamais masquée par une réponse approximative.
+
+### 9.11 Paquet montage (pipelines importés d'OpenMontage)
+
+Le dossier `skills/montage/` contient la **grammaire d'une production** importée
+d'OpenMontage (`pipeline_defs/`, `pipelines/`, `core/`, `creative/`, `meta/`,
+`styles/`), copiée sans modification — source, commit et licence **AGPL-3.0**
+consignés dans `skills/montage/PROVENANCE.md`. Aucun code exécutable du dépôt
+n'est copié : `tools/`, `remotion-composer/` et `backlot/` restent hors du studio.
+
+| Élément | Détail |
+| --- | --- |
+| Dossier | `MONTAGE_DIR = ROOT / "skills" / "montage"` dans `server/security.py`, ajouté à `ALLOWED_DIRS` |
+| Catalogue | `skills._montage_entry()` : une entrée `montage-production`, une par fichier (`.md` et `.yaml`) |
+| Chemins | préfixe virtuel `montage/…` ; `skills.document_path()` résout vers `MONTAGE_DIR`, sinon `SKILLS_DIR` |
+| Extensions | `.md`, `.yaml`, `.yml` **uniquement pour ce préfixe** ; le paquet Remotion reste `.md` seul |
+| Index | `retrieval.py` l'indexe comme les autres fiches (entre 300 documents / 2 300 sections avec le paquet) |
+| Outil | `get_montage_pipelines {"id":"…"}` : pipelines, étapes, artefacts produits, outils autorisés, approbation |
+| Outil | `validate_montage {"edl":{…}}` : validation EDL sans écriture, erreurs indexées + contrat EDL dans la réponse |
+| Action | `montage_render {edl, name}` : rendu FFmpeg après confirmation ; contexte figé = EDL normalisé + états médias (taille, mtime) |
+
+Le garde-fou est le même que pour `list_effects` : l'outil lit les manifestes
+réellement présents et lève `ToolError` avec la **liste des ids** si l'id est
+inconnu. La consigne « montage → `get_montage_pipelines` d'abord ; un plan n'est
+pas une vidéo » est placée en tête de `tools.TOOL_DESCRIPTION`, donc présente
+aussi en mode compact (`extra_rules[:400]`), sans consommer le budget du prompt
+système — celui-ci était déjà à moins de 200 caractères de son plafond de
+`context_budget × 3`.
+
+**Pont d'exécution (branché)** : les pipelines décrivent `brief → scene_plan →
+asset_manifest → edit_decisions → render_report`. L'exécution footage passe par
+le contrat EDL (`shortvideos/edl.py`, vocabulaire ferme, erreurs indexées) puis
+`shortvideos/timeline.py` (assemblage FFmpeg, aucun Remotion) :
+
+1. l'assistant produit `edit_decisions` (EDL : cuts `media://` déjà ingérés,
+   transitions, musique, étalonnage) et le contrôle avec `validate_montage`
+   (lecture seule, mêmes erreurs indexées que `POST /api/montage/validate`,
+   contrat EDL inclus dans la réponse) ;
+2. le rendu est une action confirmée `montage_render {edl, name}` :
+   `actions.describe` revalide l'EDL, fige la version normalisée, refuse un nom
+   d'export déjà pris et photographie les médias (taille + mtime) — toute
+   dérive entre la proposition et le clic refuse l'exécution ;
+3. `actions.start` délègue à `POST /api/montage` (job `montage`, annulable) ;
+   le résultat porte le probe du MP4 (durée réelle vs planifiée, audio, taille)
+   et les avertissements ; le suivi d'action propose « Ouvrir le montage »
+   (`GET /api/montage/{job_id}/file`).
+
+La répartition des moteurs est assumée : **Remotion rend les compositions
+animées v2** (motion design, titres, sous-titres), **FFmpeg assemble le footage
+réel** (EDL). Un plan sans rendu reste un plan : l'assistant ne présente jamais
+un `edit_decisions` comme une vidéo.
 
 ---
 
@@ -1590,10 +1641,11 @@ embarquer dans une livraison client.
 licence absente est affichée **`inconnue`** — un avertissement, jamais une validation — et
 listée dans la préparation du rendu comme dans le bloc « Projet résolu ».
 
-### 11.5 Paquet de connaissances Remotion
+### 11.5 Paquets de connaissances (Remotion et montage)
 
-Voir §9.7. Accès borné à `skills/remotion/` par `server/skills.py` : ni traversée, ni lecture
-hors du dossier ; lecture seule.
+Voir §9.7 et §9.11. Accès borné à `skills/remotion/` (`.md` seulement) et à
+`skills/montage/` (`.md`, `.yaml`, `.yml`, préfixe virtuel `montage/`) par
+`server/skills.py` : ni traversée, ni lecture hors des dossiers ; lecture seule.
 
 ---
 
@@ -1749,7 +1801,7 @@ python -m pytest tests -q        →  152 passed, 2 warnings
   `/clips`, `/podcast`, `/short-videos`, `/projects`, `/settings` testées dans le navigateur
   avec **0 erreur console** ; la page `/` (cockpit) et le tiroir assistant global (`Ctrl+I`)
   également ouverts et inspectés dans le navigateur local ;
-- index de connaissances : **110 documents / 548 sections**, FTS5 actif.
+- index de connaissances : **~290 documents / 2 300 sections**, FTS5 actif (paquet montage inclus).
 
 **Vérifications de l'assistant — ce qui est simulé et ce qui est réel** :
 

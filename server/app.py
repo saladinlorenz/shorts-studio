@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from . import queue as batch_queue, security, settings
-from .api import agent, batch, brands, clips, delivery, exports, folders, jobs, library, media_routes, moments as moments_api, podcast, projects, settings as settings_api, skills, studio, tts
+from .api import agent, batch, brands, clips, delivery, exports, folders, jobs, library, media_routes, moments as moments_api, montage, podcast, projects, settings as settings_api, skills, studio, tts
 
 WEB_DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
 
@@ -49,6 +49,7 @@ def health() -> dict:
 
 app.include_router(projects.router)
 app.include_router(exports.router)
+app.include_router(montage.router)
 app.include_router(jobs.router)
 app.include_router(media_routes.router)
 app.include_router(settings_api.router)

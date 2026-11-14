@@ -10,6 +10,8 @@ Pillow>=10.0.0
 # Serveur web local (server/)
 fastapi>=0.115.0
 uvicorn>=0.30.0
+# Lecture des manifestes de pipeline du paquet montage (skills/montage/*.yaml)
+PyYAML>=6.0
 python-multipart>=0.0.9
 httpx>=0.27.0
 

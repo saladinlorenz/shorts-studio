@@ -304,3 +304,15 @@ def autopilot_file(job_id: str) -> FileResponse:
             detail="Vidéo finale introuvable (plan non terminé ou fichier supprimé).",
         )
     return FileResponse(assert_local_dir(path), media_type="video/mp4")
+
+
+@router.get("/autopilot/{job_id}/format/{name}")
+def autopilot_format_file(job_id: str, name: str) -> FileResponse:
+    """Format social dérivé (1:1, 16:9) : nom validé contre l'état persisté."""
+    path = autopilot.format_path(job_id, name)
+    if path is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Format introuvable (plan non terminé ou fichier supprimé).",
+        )
+    return FileResponse(assert_local_dir(path), media_type="video/mp4")

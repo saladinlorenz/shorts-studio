@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { MediaUtilsAudioData } from "@remotion/media-utils";
+import { useAudioData, visualizeAudio, type MediaUtilsAudioData } from "@remotion/media-utils";
 import {
   AbsoluteFill,
   Audio,
@@ -379,9 +379,41 @@ const ImageLayerView: React.FC<{
   );
 };
 
+/** Ducking dynamique : la musique s'efface sous la voix. L'atténuation est
+ *  mesurée sur la vraie piste voix (FFT de @remotion/media-utils), jamais
+ *  simulée. La voix joue une seule fois : au-delà de sa durée la mesure tombe
+ *  à zéro et la musique reprend son niveau normal. */
+const DUCK_FLOOR = 0.25;
+const DUCK_DEPTH = 2.0;
+const DuckedMusic: React.FC<{
+  music: string;
+  voice: string;
+  fps: number;
+  base: (frame: number) => number;
+}> = ({ music, voice, fps, base }) => {
+  const data = useAudioData(voice);
+  const volume = (frame: number) => {
+    const level = base(frame);
+    if (!data) return level;
+    const samples = visualizeAudio({
+      audioData: data,
+      frame,
+      fps,
+      numberOfSamples: 32,
+      optimizeFor: "speed",
+      smoothing: true,
+    });
+    const speech = samples.reduce((sum, value) => sum + value, 0) / (samples.length || 1);
+    const duck = Math.max(DUCK_FLOOR, 1 - speech * DUCK_DEPTH);
+    return Math.max(0, Math.min(1, level * duck));
+  };
+  return <Audio src={music} loop volume={volume} />;
+};
+
 /** Piste sonore. Une musique plus courte que la video est bouclee, jamais
  *  ralent ni accelerate ; les fondus sont calcules en frames par l'horloge de
- *  la composition, donc l'aperçu et l'export entendent la meme chose. */
+ *  la composition, donc l'aperçu et l'export entendent la meme chose. Quand
+ *  voix et musique coexistent, la musique est duckée sous la voix. */
 const SoundBed: React.FC<{ audio: ResolvedAudio }> = ({ audio }) => {
   if (!audio.enabled) return null;
   const music = renderMediaUrl(audio.music);
@@ -400,7 +432,11 @@ const SoundBed: React.FC<{ audio: ResolvedAudio }> = ({ audio }) => {
 
   return (
     <>
-      {music && <Audio src={music} loop volume={musicVolume} />}
+      {music && voice ? (
+        <DuckedMusic music={music} voice={voice} fps={fps} base={musicVolume} />
+      ) : (
+        music && <Audio src={music} loop volume={musicVolume} />
+      )}
       {voice && <Audio src={voice} volume={audio.voice_volume} />}
     </>
   );

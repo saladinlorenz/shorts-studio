@@ -30,6 +30,10 @@ server/settings.json
 *.env
 .env.*
 
+# --- Paquet OpenMontage (AGPL-3.0) : contexte interne, non redistribué --
+# Documents importés en lecture seule (voir skills/montage/PROVENANCE.md).
+skills/montage/
+
 # --- Bases et files locales -------------------------------------------
 *.sqlite3
 *.db

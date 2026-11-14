@@ -23,9 +23,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server import settings as settings_mod
-from server.agent import actions, llm_client, proposals, review, service
+from server import imagegen
+from server.agent import actions, llm_client, proposals, review, service, tools
 from server.app import app
-from shortvideos import schema
+from shortvideos import edl as edl_mod, schema
 
 client = TestClient(app)
 
@@ -112,7 +113,8 @@ def test_catalog_lists_actions_without_secret():
     data = actions.catalog()
     names = {item["name"] for item in data["actions"]}
     assert {"project_review", "project_export", "clips_download", "tts_generate",
-            "batch_start", "delivery_package", "moments_analyze", "settings_update"} <= names
+            "batch_start", "delivery_package", "moments_analyze", "settings_update",
+            "image_generate", "montage_render"} <= names
     assert "shell" not in names and "media_analyze" not in names
     assert "api_key" not in json.dumps(data)
     detail = actions.catalog("project_export")
@@ -134,6 +136,13 @@ def test_catalog_lists_actions_without_secret():
     ("settings_update", {"provider": "gemini"}),
     ("settings_update", {}),
     ("moments_analyze", {"source": "../../secret.wav"}),
+    ("image_generate", {}),
+    ("image_generate", {"prompt": ""}),
+    ("image_generate", {"prompt": "ok", "width": 100}),
+    ("image_generate", {"prompt": "ok", "height": 4000}),
+    ("image_generate", {"prompt": "ok", "width": "1024"}),
+    ("image_generate", {"prompt": "ok", "seed": -1}),
+    ("image_generate", {"prompt": "ok", "chemin": "C:/evil"}),
 ])
 def test_invalid_params_are_refused(name, params):
     with pytest.raises(actions.ActionError):
@@ -357,3 +366,199 @@ def test_reject_before_execute_then_execute_is_refused(fake_llm, isolated_settin
     assert refuse.status_code == 200
     status, _ = _execute(proposal["id"], proposal["action"]["confirmation"])
     assert status == 424
+
+
+# --------------------------------------------------------------------------- #
+# image_generate : descriptif, impacts tiers, exécution sur clic dédié
+# --------------------------------------------------------------------------- #
+
+def test_image_generate_describe_without_project(isolated_settings):
+    settings_mod.save_settings({"llm_local_api_key": "cle-secrete-test"})
+    descriptor = actions.describe("image_generate", {"prompt": "un coucher de soleil cinématique"}, None)
+    assert descriptor["name"] == "image_generate"
+    assert descriptor["params"] == {"prompt": "un coucher de soleil cinématique", "width": 1024, "height": 1024}
+    # Aucune cible locale ne dérive : le contexte reste vide.
+    assert descriptor["context"] == {}
+    joined = " ".join(descriptor["impact"])
+    assert "pollinations.ai" in joined and "sans clé" in joined
+    assert "prompt texte" in joined and "tiers" in joined
+    assert "Aucune écriture dans le projet" in joined
+    assert "cle-secrete-test" not in json.dumps(descriptor, ensure_ascii=False)
+
+
+def test_image_generate_full_flow(fake_llm, isolated_settings, monkeypatch):
+    seen = {}
+
+    def fake_generate(prompt, *, width=1024, height=1024, seed=None, cancel=None):
+        seen.update(prompt=prompt, width=width, height=height, seed=seed)
+        assert callable(cancel)
+        return {"media_id": "img123", "ref": "media://img123", "url": "/api/media/img123",
+                "width": width, "height": height, "summary": "Image générée et importée comme média local."}
+
+    monkeypatch.setattr(imagegen, "generate_image", fake_generate)
+    fake_llm(_action_reply("image_generate", {"prompt": "forêt brumeuse", "width": 1280, "height": 720, "seed": 7}))
+    proposal = _ask({"message": "génère un fond", "project": None})["proposal"]
+    assert proposal["type"] == "studio_action"
+    assert proposal["action"]["name"] == "image_generate"
+    confirmation = proposal["action"]["confirmation"]
+
+    # /accept ne lance jamais l'action ; seule la confirmation dédiée le fait.
+    accept = client.post(f"/api/agent/proposals/{proposal['id']}/accept", json={"project": None})
+    assert accept.status_code == 424
+    assert _execute(proposal["id"], "mauvaise-confirmation")[0] == 424
+    assert seen == {}
+
+    status, body = _execute(proposal["id"], confirmation)
+    assert status == 200, body
+    snapshot = _finished(body["job_id"])
+    assert snapshot["status"] == "done", snapshot
+    assert snapshot["result"]["ref"] == "media://img123"
+    assert snapshot["result"]["media_id"] == "img123"
+    assert seen == {"prompt": "forêt brumeuse", "width": 1280, "height": 720, "seed": 7}
+
+    # Aucun double lancement, même avec la bonne confirmation.
+    assert _execute(proposal["id"], confirmation)[0] == 424
+
+
+# --------------------------------------------------------------------------- #
+# montage_render : EDL validé, rendu FFmpeg réel après confirmation
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture()
+def montage_studio(tmp_path, monkeypatch):
+    from server import media as media_mod, security
+    from server.api import montage as montage_api
+
+    media = tmp_path / "media"
+    exports = tmp_path / "exports"
+    (media / "provenance").mkdir(parents=True)
+    exports.mkdir()
+    for name in ("a.mp4", "b.mp4", "music.m4a"):
+        (media / name).write_bytes(b"factice")
+    monkeypatch.setattr(media_mod, "MEDIA_DIR", media)
+    monkeypatch.setattr(media_mod, "PROVENANCE_DIR", media / "provenance")
+    monkeypatch.setattr(security, "EXPORTS_DIR", exports)
+    monkeypatch.setattr(montage_api, "EXPORTS_DIR", exports)
+    return {"media": media, "exports": exports}
+
+
+def _edl_draft() -> dict:
+    return {
+        "version": 1,
+        "canvas": {"width": 160, "height": 90, "fps": 15},
+        "cuts": [
+            {"media": "media://a", "in": 0.1, "out": 1.4, "role": "hook", "reason": "ouverture"},
+            {"media": "media://b", "in": 0.1, "out": 1.5, "role": "end", "reason": "chute",
+             "transition": {"type": "fade", "duration": 0.3}},
+        ],
+        "audio": {"music": "media://music", "gain_db": -20, "duck": True,
+                  "fade_in": 0.2, "fade_out": 0.3},
+        "grade": {"look": "warm", "saturation": 1.1, "contrast": 1.05},
+    }
+
+
+def test_montage_render_describe_freezes_valid_edl(montage_studio):
+    descriptor = actions.describe("montage_render", {"edl": _edl_draft(), "name": "doc"}, None)
+    assert descriptor["name"] == "montage_render"
+    # L'EDL stocké est la version normalisée : le plan ne peut plus dériver.
+    assert descriptor["params"]["edl"]["cuts"][0]["transition"] == {"type": "cut", "duration": 0.0}
+    assert descriptor["context"]["duration_seconds"] == pytest.approx(2.4)
+    assert descriptor["context"]["edl"] == actions._fingerprint(descriptor["params"]["edl"])
+    assert {m["ref"] for m in descriptor["context"]["media"]} == {"media://a", "media://b", "media://music"}
+    joined = " ".join(descriptor["impact"])
+    assert "FFmpeg" in joined and "2 plans" in joined
+    assert "aucun téléchargement" in joined
+
+
+def test_montage_render_refuses_invalid_edl(montage_studio):
+    bad = _edl_draft()
+    bad["cuts"][0]["role"] = "intro"
+    with pytest.raises(actions.ActionError, match="EDL invalide"):
+        actions.describe("montage_render", {"edl": bad, "name": "doc"}, None)
+    with pytest.raises(actions.ActionError, match="EDL invalide"):
+        actions.describe("montage_render", {"edl": {"version": 1, "cuts": []}, "name": "doc"}, None)
+
+
+def test_montage_render_refuses_name_collision(montage_studio):
+    (montage_studio["exports"] / "doc.mp4").write_bytes(b"deja")
+    with pytest.raises(actions.ActionError, match="écrasement"):
+        actions.describe("montage_render", {"edl": _edl_draft(), "name": "doc"}, None)
+
+
+def test_montage_render_media_drift_is_refused(fake_llm, isolated_settings, montage_studio):
+    fake_llm(_action_reply("montage_render", {"edl": _edl_draft(), "name": "doc"}))
+    proposal = _ask({"message": "monte ces rushes", "project": None})["proposal"]
+    assert proposal["type"] == "studio_action"
+    # Le rush change entre la proposition et le clic : aucune exécution sur une cible périmée.
+    (montage_studio["media"] / "a.mp4").write_bytes(b"contenu modifie apres coup")
+    status, body = _execute(proposal["id"], proposal["action"]["confirmation"])
+    assert status == 424
+    assert "changé depuis la confirmation" in json.dumps(body, ensure_ascii=False)
+
+
+def test_montage_render_full_flow(fake_llm, isolated_settings, montage_studio):
+    import subprocess
+
+    import imageio_ffmpeg
+
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    media = montage_studio["media"]
+
+    def rush(name: str, source: str, seconds: float, audio: bool) -> None:
+        args = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", f"{source}=size=160x90:rate=30:duration={seconds}"]
+        if audio:
+            args += ["-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={seconds}",
+                     "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "128k"]
+        args += ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                 "-t", str(seconds), str(media / name)]
+        subprocess.run(args, check=True)
+
+    rush("a.mp4", "testsrc2", 2.2, audio=True)
+    rush("b.mp4", "smptebars", 2.0, audio=False)
+    subprocess.run([ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "sine=frequency=220:sample_rate=48000:duration=1.2",
+                    "-c:a", "aac", "-b:a", "128k", str(media / "music.m4a")], check=True)
+
+    fake_llm(_action_reply("montage_render", {"edl": _edl_draft(), "name": "doc-montage"}))
+    proposal = _ask({"message": "monte ces rushes en documentaire", "project": None})["proposal"]
+    assert proposal["type"] == "studio_action"
+    assert proposal["action"]["name"] == "montage_render"
+    confirmation = proposal["action"]["confirmation"]
+
+    accept = client.post(f"/api/agent/proposals/{proposal['id']}/accept", json={"project": None})
+    assert accept.status_code == 424
+    assert _execute(proposal["id"], "mauvaise-confirmation")[0] == 424
+
+    status, body = _execute(proposal["id"], confirmation)
+    assert status == 200, body
+    snapshot = _finished(body["job_id"], timeout=120.0)
+    assert snapshot["status"] == "done", snapshot
+    result = snapshot["result"]
+    assert result["path"] == "doc-montage.mp4"
+    assert result["cuts"] == 2
+    assert result["duration"] == pytest.approx(2.4, abs=0.15)
+    assert result["has_audio"] is True
+    out_file = montage_studio["exports"] / "doc-montage.mp4"
+    assert out_file.is_file() and out_file.stat().st_size == result["size_bytes"]
+
+    assert _execute(proposal["id"], confirmation)[0] == 424
+
+
+def test_validate_montage_tool_contract_and_indexed_errors(montage_studio):
+    out = tools.execute("validate_montage", {"edl": _edl_draft()}, {})
+    assert out["valid"] is True, out["errors"]
+    assert out["cuts"] == 2
+    assert out["duration_seconds"] == pytest.approx(2.4)
+    assert out["contract"]["cut"]["role"] == list(edl_mod.ROLES)
+    assert out["contract"]["cut"]["transition"]["type"] == list(edl_mod.TRANSITIONS)
+    assert "edl" not in out  # pas d'écho du plan : le modèle a déjà son brouillon
+
+    bad = _edl_draft()
+    bad["cuts"][1]["out"] = 0.05
+    out = tools.execute("validate_montage", {"edl": bad}, {})
+    assert out["valid"] is False
+    assert any("cuts[1]" in error for error in out["errors"])
+
+    with pytest.raises(tools.ToolError, match="edl"):
+        tools.execute("validate_montage", {}, {})

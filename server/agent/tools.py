@@ -29,6 +29,8 @@ MAX_ASSETS = 60
 MAX_ROWS_PREVIEW = 12
 # le catalogue complet tient dans une observation : 25 effets, reglages bornes
 MAX_EFFECT_SPECS = 40
+# 13 manifestes aujourd'hui : le plafond laisse de la marge sans noyer le prompt
+MAX_PIPELINE_SPECS = 20
 _PARAM_FIELDS = ("key", "label", "type", "default", "min", "max", "step", "unit", "options", "max_chars")
 
 READ_TOOLS = (
@@ -43,6 +45,8 @@ READ_TOOLS = (
     "list_projects",
     "list_fonts",
     "list_effects",
+    "get_montage_pipelines",
+    "validate_montage",
     # médias
     "list_assets",
     "search_assets",
@@ -78,6 +82,8 @@ EXECUTE_TOOLS = (
 )
 
 TOOL_DESCRIPTION = """OUTILS DE LECTURE (au plus max_tool_calls du contexte configuré, tous tours compris).
+Montage (footage, découpe, documentaire, clip) : get_montage_pipelines d'abord, puis suivre le
+pipeline choisi ; un plan n'est pas une vidéo.
 - actions confirmées : get_action_catalog {"name":"project_review"} (nom absent = liste) ;
   get_tts_status {} ; get_moments {}. Puis type=studio_action, jamais d'exécution directe. Pour en utiliser un,
 réponds UNIQUEMENT avec : {"tool_call":{"name":"…","args":{…}}}
@@ -90,6 +96,10 @@ Le serveur renverra toutes les observations dans un seul message ; n'écris rien
 - bibliothèque : list_templates {} · get_template {"id":"…"} · list_projects {} · list_fonts {}
 - effets : list_effects {} · list_effects {"scope":"layer","target":"text"} ·
   list_effects {"id":"glitch_slices"} (reglages, types et bornes de chaque effet)
+- montage : get_montage_pipelines {} · get_montage_pipelines {"id":"documentary-montage"}
+  (a lire AVANT toute demande de montage, avant de parler effets ou calques) ·
+  validate_montage {"edl":{…}} (controle sans ecriture : erreurs indexees + contrat EDL) ;
+  rendu footage = studio_action montage_render {"edl":{…},"name":"…"}, apres clic utilisateur
 - médias : list_assets {"kind":"video|audio|image"} · search_assets {"query":"…"} ·
   get_asset_provenance {"ref":"media://…"} · list_media_folders {} ·
   scan_media_folder {"root_id":"…"} (seulement si l'utilisateur le demande)
@@ -223,6 +233,58 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
 
     if name == "list_effects":
         return _list_effects(args)
+
+    if name == "get_montage_pipelines":
+        wanted = _str_arg(args, "id").strip().lower()
+        try:
+            pipelines = skills_mod.montage_pipelines()
+        except Exception as e:  # noqa: BLE001 - le paquet est optionnel
+            raise ToolError(f"Paquet montage illisible ({e}).") from e
+        if not pipelines:
+            raise ToolError(
+                "Aucun pipeline de montage installe : le paquet skills/montage/ est absent."
+            )
+        if wanted:
+            selected = [
+                p for p in pipelines
+                if wanted in {str(p.get("id", "")).lower(), str(p.get("name", "")).lower()}
+            ]
+            if not selected:
+                raise ToolError(
+                    f"Pipeline inconnu : {wanted!r}. Pipelines disponibles : "
+                    + ", ".join(p.get("id", "?") for p in pipelines)
+                    + "."
+                )
+            pipelines = selected
+        return {
+            "pipelines": pipelines[:MAX_PIPELINE_SPECS],
+            "note": (
+                "Choisir un pipeline avant toute autre decision, puis lire la fiche "
+                "directeur de l'etape courante (champ skill) via search_knowledge."
+            ),
+        }
+
+    if name == "validate_montage":
+        from ..api import montage as montage_api
+        raw = args.get("edl")
+        if not isinstance(raw, dict):
+            raise ToolError(
+                "validate_montage exige « edl » : l'objet JSON du plan de montage "
+                "(canvas, cuts, audio, grade). Le contrat est inclus dans la reponse."
+            )
+        check = montage_api.validate_montage(montage_api.EDLPayload(edl=raw))
+        return {
+            "valid": check["valid"],
+            "errors": check["errors"],
+            "warnings": check["warnings"],
+            "duration_seconds": check["duration_seconds"],
+            "cuts": check["cuts"],
+            "contract": _edl_contract(),
+            "note": (
+                "Controle sans ecriture. Corrigez les erreurs indexees puis revalidez ; "
+                "le rendu passe par studio_action montage_render (clic utilisateur obligatoire)."
+            ),
+        }
 
     if name == "list_assets":
         kind = _str_arg(args, "kind", "video")
@@ -432,6 +494,35 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
         }
 
     raise ToolError(f"Outil non implémenté : {name!r}.")  # garde-fou
+
+
+def _edl_contract() -> dict:
+    """Vocabulaire ferme de l'EDL : de quoi ecrire un plan valide du premier coup."""
+    from shortvideos import edl as edl_mod
+    return {
+        "version": edl_mod.EDL_VERSION,
+        "canvas": {"width": "pair, 16..7680 (defaut 1920)", "height": "pair, 16..7680 (defaut 1080)",
+                   "fps": "12..60 (defaut 30)"},
+        "cut": {
+            "media": "media://<id> deja ingere (list_assets)",
+            "in": "debut en secondes (defaut 0)",
+            "out": "fin en secondes",
+            "role": list(edl_mod.ROLES),
+            "reason": "texte <= 400 caracteres (optionnel)",
+            "transition": {"type": list(edl_mod.TRANSITIONS),
+                           "duration": "0.1..2 s ; 0 pour cut (defaut 0.5 si type != cut)"},
+        },
+        "limits": {
+            "cuts": f"1..{edl_mod.MAX_CUTS}",
+            "plan_s": f"{edl_mod.MIN_CUT_SECONDS}..{edl_mod.MAX_CUT_SECONDS}",
+            "total_s": f"{edl_mod.MIN_TOTAL_SECONDS}..{edl_mod.MAX_TOTAL_SECONDS}",
+            "transitions_distinctes_max": edl_mod.MAX_DISTINCT_TRANSITIONS,
+            "transition_max": "40 % du plan le plus court relie",
+        },
+        "grade": {"look": list(edl_mod.GRADES), "saturation": "0..2 (defaut 1)", "contrast": "0..2 (defaut 1)"},
+        "audio": {"music": "media://<id>", "gain_db": "-60..0 (defaut -18)", "duck": "booleen (defaut true)",
+                  "fade_in": "0..10 s (defaut 1)", "fade_out": "0..10 s (defaut 2)"},
+    }
 
 
 def _list_effects(args: dict) -> dict:

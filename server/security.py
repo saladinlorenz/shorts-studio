@@ -24,6 +24,9 @@ CLIPS_DIR = ROOT / "clips"
 PODCAST_DIR = ROOT / "podcast_db"
 # paquet de connaissances (Agent Skills) lu par l'agent de l'app, en lecture seule
 SKILLS_DIR = ROOT / "skills" / "remotion"
+# paquet de connaissances « montage » (pipelines de production importes
+# d'OpenMontage) : lecture seule, meme regime de confinement que SKILLS_DIR
+MONTAGE_DIR = ROOT / "skills" / "montage"
 # dossiers de la production par lots : file SQLite, plan, manifestes,
 # et registre des dossiers de médias connectés par l'utilisateur
 BATCH_DIR = ROOT / "batch"
@@ -55,6 +58,7 @@ ALLOWED_DIRS = (
     CLIPS_DIR,
     PODCAST_DIR,
     SKILLS_DIR,
+    MONTAGE_DIR,
     BATCH_DIR,
     BRANDS_DIR,
     MOMENTS_DIR,

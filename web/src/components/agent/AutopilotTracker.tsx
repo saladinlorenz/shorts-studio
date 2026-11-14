@@ -2,6 +2,7 @@ import React from "react";
 import {
   CheckCircle2,
   Clock,
+  Download,
   Loader2,
   MinusCircle,
   Play,
@@ -188,6 +189,23 @@ export default function AutopilotTracker({ planId, notify }: Props) {
             controls
             className="max-h-[280px] w-full rounded-md border border-border bg-black"
           />
+          {state.video.formats && state.video.formats.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] text-muted-foreground">Autres formats :</span>
+              {state.video.formats.map((fmt) => (
+                <a
+                  key={fmt.name}
+                  href={api.autopilotFormatUrl(planId, fmt.name)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-6 items-center gap-1 rounded-md border border-input px-2 text-[10px] font-medium hover:bg-accent hover:text-accent-foreground"
+                  title={`${fmt.width}×${fmt.height} · ${formatBytes(fmt.size_bytes)}`}
+                >
+                  <Download size={11} /> {fmt.ratio}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

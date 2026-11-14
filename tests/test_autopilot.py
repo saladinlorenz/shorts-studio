@@ -254,6 +254,114 @@ def test_voice_null_skips_the_voice_step(fake_llm, fake_tts, fake_render, studio
     assert state["voice_ref"] is None
 
 
+def test_voice_step_paces_scenes_to_narration(fake_llm, fake_tts, fake_render, studio_tmp):
+    """G2 : la duree totale du montage rendu suit la voix off (2 s simulees)."""
+    proposal = _make_plan(fake_llm)
+    job_id = _start(proposal["id"])
+    state = _poll(f"/api/agent/autopilot/{job_id}")
+    assert state["status"] == "done", state
+    # Le rythme est cale DANS l'etape voix : toujours exactement 4 etapes.
+    assert [s["status"] for s in state["steps"]] == ["done"] * 4
+    rendered = fake_render["projects"][0]
+    assert schema.total_duration(rendered) == pytest.approx(2.0, abs=0.1)
+    assert proposals.validate_candidate(rendered)[0] == []
+
+
+def test_no_voice_keeps_original_scene_durations(fake_llm, fake_tts, fake_render, studio_tmp):
+    """G2 : sans voix off, l'etape est sautee et les durees restent celles du modele."""
+    proposal = _make_plan(fake_llm, _plan_reply(voice=None))
+    job_id = _start(proposal["id"])
+    state = _poll(f"/api/agent/autopilot/{job_id}")
+    assert state["status"] == "done", state
+    assert state["steps"][2]["status"] == "skipped"
+    rendered = fake_render["projects"][0]
+    original = library.get_project(TEMPLATE)
+    assert schema.total_duration(rendered) == pytest.approx(schema.total_duration(original), abs=0.01)
+
+
+def test_export_delivers_three_social_formats(fake_llm, fake_tts, monkeypatch, studio_tmp):
+    """G3 : le master 9:16 + les derives 1:1 et 16:9 sont livres et servables."""
+    import subprocess
+
+    import imageio_ffmpeg
+
+    from shortvideos.probe import probe_mp4
+
+    def real_render(job, project, out_path):
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        subprocess.run([
+            ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=c=blue:s=270x480:d=1:r=10",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
+            str(out_path),
+        ], check=True, capture_output=True)
+        return {"size_bytes": out_path.stat().st_size, "duration": 1.0}
+
+    monkeypatch.setattr(render_mod, "render_project_to_mp4", real_render)
+    proposal = _make_plan(fake_llm)
+    job_id = _start(proposal["id"])
+    state = _poll(f"/api/agent/autopilot/{job_id}")
+    assert state["status"] == "done", state
+    assert [s["status"] for s in state["steps"]] == ["done"] * 4
+
+    video = state["video"]
+    formats = video["formats"]
+    assert {f["ratio"] for f in formats} == {"1:1", "16:9"}
+    exports = studio_tmp["exports"]
+    assert (exports / video["name"]).is_file()  # master 9:16 intact
+    for fmt in formats:
+        path = exports / fmt["name"]
+        assert path.is_file()
+        info = probe_mp4(str(path))
+        assert (info["width"], info["height"]) == (fmt["width"], fmt["height"])
+        assert client.get(fmt["url"]).status_code == 200
+    # Un nom qui n'est pas un format declare n'est jamais servi.
+    assert client.get(f"/api/agent/autopilot/{job_id}/format/inconnu.mp4").status_code == 404
+
+
+def test_design_step_auto_broll_matches_theme(fake_llm, fake_tts, fake_render, monkeypatch, studio_tmp):
+    """G4 : un visuel local pertinent est pose en fond DANS l'etape design (4 etapes)."""
+    (studio_tmp["media"] / "broll-montagne.png").write_bytes(b"png")
+    monkeypatch.setattr(autopilot, "_gather_broll_assets", lambda: [
+        {"ref": "media://broll-montagne", "name": "montagne.png", "kind": "image", "folder": "Paysages"},
+    ])
+    reply = _plan_reply(script=[
+        {"scene_id": "s1", "layer_id": "hook", "text": "Le saviez-vous ?"},
+        {"scene_id": "s2", "layer_id": "quote", "text": "La montagne nous appelle."},
+        {"scene_id": "s2", "layer_id": "author", "text": "Anonyme"},
+    ])
+    proposal = _make_plan(fake_llm, reply)
+    job_id = _start(proposal["id"])
+    state = _poll(f"/api/agent/autopilot/{job_id}")
+    assert state["status"] == "done", state
+    assert [s["status"] for s in state["steps"]] == ["done"] * 4
+    rendered = fake_render["projects"][0]
+    scenes = {s["id"]: s for s in rendered["content"]["scenes"]}
+    assert scenes["s2"]["background"]["media"] == "media://broll-montagne"
+    assert scenes["s1"]["background"]["media"] == ""  # aucune correspondance de theme
+    assert proposals.validate_candidate(rendered)[0] == []
+
+
+def test_auto_broll_missing_media_never_breaks_design(fake_llm, fake_tts, fake_render, monkeypatch, studio_tmp):
+    """G4 best-effort : un media collecte mais absent du store ne casse pas le plan."""
+    monkeypatch.setattr(autopilot, "_gather_broll_assets", lambda: [
+        {"ref": "media://fantome", "name": "montagne.png", "kind": "image"},
+    ])
+    reply = _plan_reply(script=[
+        {"scene_id": "s1", "layer_id": "hook", "text": "Le saviez-vous ?"},
+        {"scene_id": "s2", "layer_id": "quote", "text": "La montagne nous appelle."},
+        {"scene_id": "s2", "layer_id": "author", "text": "Anonyme"},
+    ])
+    proposal = _make_plan(fake_llm, reply)
+    job_id = _start(proposal["id"])
+    state = _poll(f"/api/agent/autopilot/{job_id}")
+    assert state["status"] == "done", state
+    assert [s["status"] for s in state["steps"]] == ["done"] * 4
+    rendered = fake_render["projects"][0]
+    assert all(s["background"]["media"] == "" for s in rendered["content"]["scenes"])
+
+
 # --------------------------------------------------------------------------- #
 # Sous-titres synchronisés (drapeau captions)
 # --------------------------------------------------------------------------- #
@@ -844,6 +952,23 @@ def test_director_craft_guides_autopilot_and_design():
             assert technique in grounding, f"{technique} absent du grounding (compact={compact})"
     assert "RÉALISATION" in capabilities.prompt_block(manifest)
     assert "réalisateur" in context.SYSTEM_RULES and "ingénieur de montage" in context.SYSTEM_RULES
+
+
+def test_image_generate_guidance_reaches_design_grounding_only():
+    """Quand proposer une image générée, et pourquoi l'affectation reste séparée.
+
+    Le guidage vit dans le grounding design (budget souple). Il n'entre PAS dans
+    le grounding autopilote compact : l'autopilote a 4 étapes fixes et ne génère
+    pas d'image en plein plan, et son budget de contexte est déjà au plus juste.
+    """
+    manifest = capabilities.build()
+    grounding = capabilities.prompt_block(manifest)
+    assert "image_generate" in grounding
+    assert "clic dédié" in grounding
+    assert "SÉPARÉE" in grounding
+    assert "set_scene background.media" in grounding and "hidden=false" in grounding
+    assert "Pollinations" in grounding
+    assert "image_generate" not in capabilities.autopilot_grounding(manifest, compact=True)
 
 
 def test_list_assets_includes_imported_media_without_connected_folders(monkeypatch):

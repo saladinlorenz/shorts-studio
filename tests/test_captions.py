@@ -219,3 +219,68 @@ def test_overlay_empty_cues_returns_unchanged_clone():
     out = captions.overlay_captions(project, [], fps=30)
     assert out == project
     assert out is not project
+
+
+# --------------------------------------------------------------------------- #
+# Rythme cale sur la voix (G2) : la duree totale des scenes suit la narration,
+# le rythme relatif est preserve, chaque duree reste dans les bornes du schema.
+# --------------------------------------------------------------------------- #
+
+def test_pace_to_voice_matches_total_and_preserves_ratio():
+    project = _two_scene_project()  # 2 s + 2 s = 4 s
+    snapshot = schema.clone(project)
+    out = captions.pace_to_voice(project, 8.0, fps=30)
+    assert schema.total_duration(out) == pytest.approx(8.0, abs=0.01)
+    durations = [sc["duration"] for sc in out["content"]["scenes"]]
+    assert durations[0] == pytest.approx(durations[1])  # rythme relatif preserve
+    assert any(l["id"] == "title" for l in out["content"]["scenes"][0]["layers"])
+    assert project == snapshot, "le projet source n'est pas mute"
+
+
+def test_pace_to_voice_clamps_to_schema_bounds():
+    project = _two_scene_project()
+    low = captions.pace_to_voice(project, 0.2, fps=30)  # 0.1 s/scene -> borne min
+    for scene in low["content"]["scenes"]:
+        assert scene["duration"] >= schema.SCENE_DURATION_MIN
+    high = captions.pace_to_voice(project, 1000.0, fps=30)  # 500 s/scene -> borne max
+    for scene in high["content"]["scenes"]:
+        assert scene["duration"] <= schema.SCENE_DURATION_MAX
+    assert validation.validate_project_v2(low)[0] == []
+    assert validation.validate_project_v2(high)[0] == []
+
+
+def test_pace_to_voice_no_voice_returns_unchanged_clone():
+    project = _two_scene_project()
+    for seconds in (0.0, -1.0):
+        out = captions.pace_to_voice(project, seconds, fps=30)
+        assert out == project
+        assert out is not project
+
+
+def test_pace_to_voice_includes_hidden_scenes():
+    project = _two_scene_project()
+    project["content"]["scenes"][1]["hidden"] = True
+    out = captions.pace_to_voice(project, 8.0, fps=30)
+    # La scene cachee compte dans la timeline : les deux sont remises a l'echelle.
+    assert schema.total_duration(out) == pytest.approx(8.0, abs=0.01)
+    assert out["content"]["scenes"][1]["hidden"] is True
+
+
+def test_pace_to_voice_empty_scenes_returns_clone():
+    project = schema.new_project("quote_cinematic")
+    project["content"]["scenes"] = []
+    out = captions.pace_to_voice(project, 5.0, fps=30)
+    assert out == project
+
+
+def test_pace_to_voice_rescales_layer_windows_to_stay_valid():
+    project = schema.new_project("quote_cinematic")
+    layer = schema.text_layer("title", "Titre", start_frames=48, in_frames=24)
+    project["content"]["scenes"] = [schema.scene("s1", "Un", 6.0, [layer])]
+    out = captions.pace_to_voice(project, 2.0, fps=30)  # 6 s -> 2 s, facteur 1/3
+    scene = out["content"]["scenes"][0]
+    new_frames = int(round(scene["duration"] * 30))
+    anim = scene["layers"][0]["animation"]
+    assert anim["start_frames"] < new_frames, "le calque ne deborde plus de la scene"
+    assert anim["start_frames"] == pytest.approx(16, abs=1)  # 48 * 1/3
+    assert validation.validate_project_v2(out)[0] == []

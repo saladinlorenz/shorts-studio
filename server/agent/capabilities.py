@@ -391,7 +391,13 @@ def _prompt_lines(manifest: dict, max_chars: int = 6000) -> list[str]:
             + "; ".join(f"{m['ref']} ({m['name']}, {m['kind']}, licence {m['licence']})" for m in media)
         )
     else:
-        lines.append("- Aucun média importé : ne proposer aucun fond, logo ou musique.")
+        lines.append("- Aucun média importé : pas de fond/logo/musique local ; un fond généré reste possible via image_generate.")
+    lines.append(
+        "- Visuel manquant : si une scène a besoin d'un fond/B-roll et qu'aucun média local ne convient "
+        "(list_assets/search_assets), propose studio_action image_generate (descriptif texte, Pollinations "
+        "sans clé, clic dédié de l'utilisateur). Le media:// rendu s'affecte dans une proposition SÉPARÉE : "
+        "set_scene background.media ou set_layer media + hidden=false. Jamais d'écriture projet au tour de génération."
+    )
     return _budget(lines, max_chars)
 
 

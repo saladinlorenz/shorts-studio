@@ -28,6 +28,11 @@ class ProjectExport(Params):
     name: Identifier
 
 
+class MontageRender(Params):
+    edl: dict
+    name: Identifier
+
+
 class ClipsDownload(Params):
     url: Annotated[str, StringConstraints(min_length=1, max_length=500)]
 
@@ -77,14 +82,23 @@ class SettingsUpdate(Params):
     stream: bool | None = None
 
 
+class ImageGenerate(Params):
+    prompt: Prompt
+    width: int = Field(default=1024, ge=256, le=1920)
+    height: int = Field(default=1024, ge=256, le=1920)
+    seed: int | None = Field(default=None, ge=0, le=2147483647)
+
+
 SCHEMAS = {
     "project_review": (ProjectReview, "Auditer et corriger le projet sans vision"),
     "project_export": (ProjectExport, "Exporter le projet en MP4"),
+    "montage_render": (MontageRender, "Rendre un montage footage (EDL) en MP4"),
     "clips_download": (ClipsDownload, "Télécharger une vidéo YouTube"),
     "clips_analyze": (ClipsAnalyze, "Analyser la transcription des Clips"),
     "clips_extract": (ClipsExtract, "Extraire les Clips sélectionnés"),
     "tts_download": (TtsDownload, "Télécharger une voix du catalogue"),
     "tts_generate": (TtsGenerate, "Synthétiser une voix off locale"),
+    "image_generate": (ImageGenerate, "Générer une image de fond (Pollinations, sans clé)"),
     "batch_start": (BatchTarget, "Démarrer un lot déjà préparé"),
     "batch_retry": (BatchTarget, "Relancer les échecs d’un lot"),
     "batch_cancel": (BatchTarget, "Annuler un lot"),
@@ -179,6 +193,25 @@ def describe(name: str, raw: dict, project: dict | None) -> dict:
             impact.append("Rendu local de 6 frames maximum par passe ; au plus 2 appels au modèle et 2 corrections JSON, puis recontrôle. Les images restent locales pour votre contrôle. Résultat proposé, jamais appliqué automatiquement.")
         elif name == "project_export":
             impact.append("Rendu local potentiellement long. Création d’un MP4 ; aucun fichier existant ne sera remplacé.")
+        elif name == "montage_render":
+            from ..api import montage as montage_api
+            check = montage_api.validate_montage(montage_api.EDLPayload(edl=params["edl"]))
+            if not check["valid"]:
+                raise ActionError("EDL invalide : " + "; ".join(check["errors"][:6]))
+            params["edl"] = check["edl"]
+            from ..security import EXPORTS_DIR, safe_name
+            if (EXPORTS_DIR / (safe_name(params["name"]) + ".mp4")).exists():
+                raise ActionError("Un export porte déjà ce nom : choisissez un autre nom, aucun écrasement autorisé.")
+            refs = [cut["media"] for cut in params["edl"]["cuts"]]
+            music = str((params["edl"].get("audio") or {}).get("music") or "")
+            if music:
+                refs.append(music)
+            state["edl"] = _fingerprint(params["edl"])
+            state["media"] = [_media_state(ref) for ref in dict.fromkeys(refs)]
+            state["duration_seconds"] = check["duration_seconds"]
+            impact.append(f"Rendu local FFmpeg de {check['cuts']} plans ({check['duration_seconds']} s) vers exports/. Aucun fichier existant ne sera remplacé.")
+            impact.append("Médias déjà ingérés en local uniquement : aucun téléchargement, aucune source distante.")
+            impact.extend(f"Avertissement : {warning}" for warning in check["warnings"][:4])
         elif name == "clips_download":
             params["url"] = _youtube_url(params["url"])
             impact.append("Téléchargement depuis YouTube vers le disque local. Confirmez disposer des droits nécessaires ; aucune autre source ni playlist autorisée.")
@@ -229,6 +262,10 @@ def describe(name: str, raw: dict, project: dict | None) -> dict:
             cfg = settings.llm_config()
             state["before"] = {key: cfg.get(key) for key in params}
             impact.append("Modification persistante des valeurs affichées pour les prochaines demandes. Ni clé, fournisseur, modèle, URL, permission ou chemin ne peut être modifié ici.")
+        elif name == "image_generate":
+            impact.append("Téléchargement d’un JPEG depuis image.pollinations.ai (service externe gratuit, sans clé).")
+            impact.append("Le descriptif (prompt texte) est envoyé à ce service tiers ; l’image revient en local comme média.")
+            impact.append("Aucune écriture dans le projet : l’affectation au fond ou au calque image reste une proposition séparée.")
     except HTTPException as exc:
         raise ActionError(str(exc.detail)) from None
     except (OSError, KeyError, ValueError) as exc:
@@ -239,7 +276,7 @@ def describe(name: str, raw: dict, project: dict | None) -> dict:
 
 
 def start(action: dict, record: dict, cfg: dict) -> dict:
-    from ..api import batch, clips, delivery, exports, moments, tts
+    from ..api import batch, clips, delivery, exports, moments, montage, tts
 
     name, params = action["name"], action["params"]
     if name == "clips_download":
@@ -261,6 +298,8 @@ def start(action: dict, record: dict, cfg: dict) -> dict:
         return delivery.package_batch(params["batch_id"])
     if name == "project_export":
         return exports.start_export(exports.ExportPayload(project=record["base_project"], **params))
+    if name == "montage_render":
+        return montage.start_montage(montage.MontagePayload(edl=params["edl"], name=params["name"]))
     if name == "moments_analyze":
         return moments.analyze(moments.AnalyzePayload(**params))
 
@@ -268,6 +307,12 @@ def start(action: dict, record: dict, cfg: dict) -> dict:
         jobs.raise_if_cancelled(job)
         if name == "batch_cancel":
             return batch.batch_cancel(params["batch_id"])
+        if name == "image_generate":
+            from .. import imagegen
+            return imagegen.generate_image(
+                params["prompt"], width=params["width"], height=params["height"],
+                seed=params.get("seed"), cancel=lambda: jobs.raise_if_cancelled(job),
+            )
         if name == "moments_generate":
             return moments.generate(params["analysis_id"], moments.GeneratePayload(moment_id=params["moment_id"]))
         if name == "settings_update":

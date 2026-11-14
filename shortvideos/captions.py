@@ -316,3 +316,63 @@ def overlay_captions(project: dict, cues: list[dict], *, fps: int | None = None,
             ))
         scene["layers"] = layers
     return out
+
+
+def _rescale_scene_timing(scene: dict, local: float, new_frames: int) -> None:
+    """Remet a l'echelle les fenetres d'animation et la transition d'une scene.
+
+    Quand la duree d'une scene change, les calques doivent suivre : un
+    ``start_frames`` pense pour 6 s deborderait d'une scene ramenee a 1 s.
+    Chaque fenetre est multipliee par le facteur local puis bornee a la
+    nouvelle duree, pour que le design reste valide et proportionnel.
+    """
+    from . import schema
+
+    transition = scene.get("transition")
+    if isinstance(transition, dict) and transition.get("frames"):
+        scaled = int(round(int(transition["frames"]) * local))
+        transition["frames"] = max(0, min(new_frames, schema.TRANSITION_FRAMES_MAX, scaled))
+    for layer in scene.get("layers", []):
+        anim = layer.get("animation")
+        if not isinstance(anim, dict):
+            continue
+        start = int(anim.get("start_frames", 0) or 0)
+        anim["start_frames"] = max(0, min(new_frames - 1, int(round(start * local))))
+        for key in ("in_frames", "out_frames"):
+            if key in anim:
+                anim[key] = max(0, int(round(int(anim[key] or 0) * local)))
+
+
+def pace_to_voice(project: dict, voice_seconds: float, *, fps: int | None = None) -> dict:
+    """Cale la duree totale des scenes sur la narration, sans toucher au design.
+
+    Chaque scene est remise a l'echelle proportionnellement : le rythme relatif
+    choisi par le realisateur est preserve, mais la video dure exactement le
+    temps de la voix off — ni blanc en fin, ni narration coupee. Chaque duree
+    est bornee aux limites du schema, et les fenetres d'animation + transitions
+    suivent la nouvelle duree (le design reste valide). Les scenes cachees
+    comptent dans la timeline (resolve les accumule toutes), elles sont donc
+    remises a l'echelle aussi. Sans voix (<=0) ou sans scene, le projet est rendu
+    tel quel (copie). Renvoie une copie : le projet d'origine n'est pas mute.
+    """
+    from . import schema
+
+    out = schema.clone(project)
+    scenes = out.get("content", {}).get("scenes", [])
+    if voice_seconds <= 0 or not scenes:
+        return out
+    rate = int(fps if fps is not None else (out.get("export") or {}).get("fps", 30) or 30)
+    durations = [max(0.0, float(sc.get("duration", 0.0))) for sc in scenes]
+    total = sum(durations)
+    if total <= 0:
+        return out
+    scale = voice_seconds / total
+    for scene, old_duration in zip(scenes, durations):
+        new_duration = min(schema.SCENE_DURATION_MAX, max(schema.SCENE_DURATION_MIN, old_duration * scale))
+        new_duration = round(new_duration, 3)
+        scene["duration"] = new_duration
+        if old_duration <= 0:
+            continue
+        new_frames = max(1, int(round(new_duration * rate)))
+        _rescale_scene_timing(scene, new_duration / old_duration, new_frames)
+    return out

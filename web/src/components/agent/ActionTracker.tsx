@@ -155,8 +155,10 @@ export default function ActionTracker({ proposal, jobId, job, pollError, launchE
     : done ? "terminée" : launching ? "envoi en cours" : running ? "en cours" : "en attente";
   const batchId = proposal.action?.params.batch_id ?? proposal.action?.context.batch_id;
   const exportUrl = done && proposal.action?.name === "project_export" && identifier(jobId) ? api.exportFileUrl(jobId) : null;
+  const montageUrl = done && proposal.action?.name === "montage_render" && identifier(jobId) ? api.montageFileUrl(jobId) : null;
   const deliveryUrl = done && proposal.action?.name === "delivery_package" && identifier(batchId) ? api.deliveryPackageUrl(batchId) : null;
   const visual = proposal.action?.name === "project_review" || frames.length > 0 || typeof result?.verified === "boolean";
+  const imageRef = done && proposal.action?.name === "image_generate" ? safeMediaRef(result?.ref) : null;
 
   const cancel = async () => {
     if (!jobId || cancelLock.current || cancelRequested) return;
@@ -219,6 +221,12 @@ export default function ActionTracker({ proposal, jobId, job, pollError, launchE
           ))}
         </div>
       )}
+      {imageRef && (
+        <a href={mediaUrl(imageRef)!} target="_blank" rel="noopener noreferrer" className="block min-w-0">
+          <img src={mediaUrl(imageRef)!} alt="Image générée" loading="lazy" className="max-h-64 w-full rounded border border-border object-contain" />
+          <span className="text-muted-foreground">Image générée — affectez-la au fond ou à un calque image via une demande séparée.</span>
+        </a>
+      )}
       {job?.result != null && (
         <details>
           <summary className="cursor-pointer text-muted-foreground">Résultat JSON (borné, contenu non fiable)</summary>
@@ -227,6 +235,7 @@ export default function ActionTracker({ proposal, jobId, job, pollError, launchE
       )}
       <div className="flex flex-wrap gap-2">
         {exportUrl && <a className="text-primary underline" href={exportUrl} target="_blank" rel="noopener noreferrer">Ouvrir l'export</a>}
+        {montageUrl && <a className="text-primary underline" href={montageUrl} target="_blank" rel="noopener noreferrer">Ouvrir le montage</a>}
         {deliveryUrl && <a className="text-primary underline" href={deliveryUrl} target="_blank" rel="noopener noreferrer">Télécharger le paquet de livraison</a>}
         {refs.map((ref) => <a key={ref} className="break-all text-primary underline" href={mediaUrl(ref)!} target="_blank" rel="noopener noreferrer">{ref}</a>)}
       </div>

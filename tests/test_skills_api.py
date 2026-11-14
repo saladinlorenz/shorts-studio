@@ -29,7 +29,7 @@ def test_catalog_declares_skills_with_entrypoints():
     for entry in body:
         assert entry["entry"].endswith(".md")
         assert entry["description"]
-        assert Path(skills.SKILLS_DIR / entry["entry"]).is_file()
+        assert skills.document_path(entry["entry"]).is_file()
 
 
 def test_document_and_context_read():
@@ -112,3 +112,65 @@ def test_skills_routes_answer():
         first = payload["skills"][1]["id"]
         assert client.get(f"/api/skills/{first}").status_code == 200
     assert client.get("/api/skills/doc/../server/settings.py").status_code in (400, 404)
+
+
+# --------------------------------------------------------------------------- #
+# Paquet montage (pipelines importes d'OpenMontage)
+# --------------------------------------------------------------------------- #
+
+def test_montage_package_is_declared_with_its_licence():
+    if not skills.MONTAGE.is_dir():
+        pytest.skip("paquet skills/montage absent")
+    entry = skills.find_skill(skills.MONTAGE_ID)
+    assert entry["docs"], "les manifestes et fiches doivent etre indexes"
+    # chaque document declare doit etre resolvable, y compris les .yaml
+    for rel in [entry["entry"], *entry["docs"]]:
+        assert skills.document_path(rel).is_file(), rel
+    sources = {s["id"]: s for s in skills.provenance()["sources"]}
+    assert sources[skills.MONTAGE_ID]["licence"] == "AGPL-3.0"
+
+
+def test_montage_manifests_are_parsed_into_stages():
+    if not skills.MONTAGE.is_dir():
+        pytest.skip("paquet skills/montage absent")
+    pipelines = skills.montage_pipelines()
+    assert len(pipelines) >= 10
+    documentary = next(p for p in pipelines if p["id"] == "documentary-montage")
+    assert documentary["parsed"] is True
+    names = [s["name"] for s in documentary["stages"]]
+    assert names[0] == "idea" and names[-1] == "compose"
+    produces = [a for s in documentary["stages"] for a in s["produces"]]
+    # le contrat d'execution d'un vrai montage
+    assert "edit_decisions" in produces
+    assert "asset_manifest" in produces
+
+
+def test_montage_documents_are_readable_and_bounded():
+    if not skills.MONTAGE.is_dir():
+        pytest.skip("paquet skills/montage absent")
+    doc = skills.read_document("montage/pipeline_defs/documentary-montage.yaml")
+    assert doc["path"].startswith("montage/")
+    assert "documentary-montage" in doc["content"]
+    readme = skills.read_document("montage/README.md")
+    assert "edit_decisions" in readme["content"]
+    for rel_path in (
+        "montage/../remotion-best-practices/SKILL.md",
+        "montage/../../server/settings.py",
+        "montage/",
+    ):
+        with pytest.raises(Exception) as excinfo:
+            skills.read_document(rel_path)
+        assert getattr(excinfo.value, "status_code", None) in (400, 404)
+
+
+def test_montage_tool_lists_pipelines_and_refuses_unknown_ids():
+    from server.agent import tools
+
+    if not skills.MONTAGE.is_dir():
+        pytest.skip("paquet skills/montage absent")
+    out = tools.execute("get_montage_pipelines", {}, {})
+    assert len(out["pipelines"]) == len(skills.montage_pipelines())
+    one = tools.execute("get_montage_pipelines", {"id": "clip-factory"}, {})
+    assert one["pipelines"][0]["id"] == "clip-factory"
+    with pytest.raises(tools.ToolError):
+        tools.execute("get_montage_pipelines", {"id": "pipeline-invente"}, {})
