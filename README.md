@@ -2,494 +2,488 @@
 
 # shorts-studio
 
-**Le studio vidéo local qui transforme une phrase en vidéo prête à publier.**
-Motion design, production par lots, montage footage, voix off, sous-titres et assistant IA —
-le tout sur votre machine, sans cloud obligatoire, sans rien faire dans votre dos.
+**The local video studio that turns a single sentence into a publish-ready video.**
+Motion design, batch production, footage editing, voice-over, captions and an AI assistant —
+all on your machine, with no mandatory cloud and nothing done behind your back.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-467%20passed-brightgreen.svg)](#tests--vérifications)
-[![Python](https://img.shields.io/badge/python-3.12-blue.svg)](#stack-technique)
-[![Node](https://img.shields.io/badge/node-22-green.svg)](#stack-technique)
-[![Remotion](https://img.shields.io/badge/Remotion-4.0.539-ff69b4.svg)](#stack-technique)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688.svg)](#stack-technique)
-[![React](https://img.shields.io/badge/React-18-61dafb.svg)](#stack-technique)
-[![Local first](https://img.shields.io/badge/local--first-aucun%20cloud%20obligatoire-orange.svg)](#les-4-lois-du-studio)
+[![Tests](https://img.shields.io/badge/tests-467%20passed-brightgreen.svg)](#tests--verification)
+[![Python](https://img.shields.io/badge/python-3.12-blue.svg)](#tech-stack)
+[![Node](https://img.shields.io/badge/node-22-green.svg)](#tech-stack)
+[![Remotion](https://img.shields.io/badge/Remotion-4.0.539-ff69b4.svg)](#tech-stack)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688.svg)](#tech-stack)
+[![React](https://img.shields.io/badge/React-18-61dafb.svg)](#tech-stack)
+[![Local first](https://img.shields.io/badge/local--first-no%20mandatory%20cloud-orange.svg)](#the-4-laws-of-the-studio)
 
-*Interface web · serveur `127.0.0.1` · un seul lanceur : `start_web.bat`*
+*Web interface · `127.0.0.1` server · a single launcher: `start_web.bat`*
 
 </div>
 
 ---
 
-## En une phrase
+## In one sentence
 
-> Vous décrivez la vidéo que vous voulez. L'assistant prépare le projet, l'autopilote le rend
-> en MP4, le studio le décline en 200 exemplaires depuis un CSV, l'assemble en montage footage
-> réel, le sous-titre, le décline aux formats sociaux et le livre en ZIP au client.
-> **Vous gardez la main sur chaque clic sensible.**
+> You describe the video you want. The assistant prepares the project, the autopilot renders it
+> to MP4, the studio spins it into 200 variants from a CSV, assembles real footage edits,
+> captions it, derives social formats and delivers it to the client as a ZIP.
+> **You keep control of every sensitive click.**
 
-`shorts-studio` (dossier `youtube_clipper`) est un **studio de production vidéo complet, local
-et autonome**. Il réunit dans une seule application web ce qu'on disperse habituellement entre
-After Effects, un outil de sous-titres, un moteur TTS, un script de batch et un assistant IA :
-un éditeur visuel, un moteur de rendu déterministe, une file de production, un assistant qui
-connaît le studio par cœur, et une chaîne de livraison commerciale.
-
----
-
-## Un projet original, entièrement remodelé
-
-`shorts-studio` est **mon projet : mon architecture, mon code, ma direction**. Remotion et
-OpenMontage ont servi de point de départ — l'un comme moteur de rendu, l'autre comme grammaire
-de production — mais **tout a été remodelé, réarchitecturé et réécrit** pour former un studio
-cohérent qui m'appartient en propre :
-
-- le **format de projet v2** et sa résolution déterministe sont conçus pour ce studio ;
-- les **25 effets**, le moteur de sous-titres, la voix off, le B-roll et les formats sociaux sont
-  des implémentations maison ;
-- l'**assistant IA**, son contrat de propositions, ses 32 outils et son autopilote sont écrits
-  sur mesure, sans framework IA lourd ;
-- le **moteur de montage footage** (contrat EDL + assemblage FFmpeg en trois passes) est une
-  implémentation originale : aucun code exécutable d'OpenMontage n'est copié.
-
-Remotion reste une bibliothèque tierce utilisée sous sa propre licence ; la grammaire OpenMontage
-n'est conservée qu'en **lecture seule, en local**, comme simple référence documentaire
-(voir [Licence](#licence)). Le studio, lui, est une œuvre originale et propriétaire — pas un
-wrapper, pas une copie.
+`shorts-studio` (folder `youtube_clipper`) is a **complete, local, self-contained video production
+studio**. It brings together in a single web app what is usually scattered across After Effects,
+a captioning tool, a TTS engine, a batch script and an AI assistant: a visual editor, a deterministic
+render engine, a production queue, an assistant that knows the studio inside out, and a commercial
+delivery pipeline.
 
 ---
 
-## Sommaire
+## An original project, fully remodeled
 
-- [Un projet original, entièrement remodelé](#un-projet-original-entièrement-remodelé)
-- [Pourquoi ce studio ?](#pourquoi-ce-studio-)
-- [Ce que vous pouvez faire](#ce-que-vous-pouvez-faire)
-- [L'autopilote : une demande → un MP4](#lautopilote--une-demande--un-mp4)
-- [L'assistant IA : il propose, vous appliquez](#lassistant-ia--il-propose-vous-appliquez)
-- [Le montage footage : EDL → FFmpeg](#le-montage-footage--edl--ffmpeg)
-- [Les 4 lois du studio](#les-4-lois-du-studio)
-- [Stack technique](#stack-technique)
-- [Démarrage rapide](#démarrage-rapide)
+`shorts-studio` is **my project: my architecture, my code, my direction**. Remotion and OpenMontage
+were starting points — one as a render engine, the other as a production grammar — but
+**everything was remodeled, re-architected and rewritten** into a coherent studio that is wholly mine:
+
+- the **v2 project format** and its deterministic resolution were designed for this studio;
+- the **25 effects**, the caption engine, the voice-over, the B-roll and the social formats are
+  home-grown implementations;
+- the **AI assistant**, its proposal contract, its 32 tools and its autopilot are written from
+  scratch, with no heavy AI framework;
+- the **footage editing engine** (EDL contract + three-pass FFmpeg assembly) is an original
+  implementation: no executable code from OpenMontage is copied.
+
+Remotion remains a third-party library used under its own license; the OpenMontage grammar is kept
+only as **read-only, local** documentation reference (see [License](#license)). The studio itself is
+an original, proprietary work — not a wrapper, not a copy.
+
+---
+
+## Table of contents
+
+- [An original project, fully remodeled](#an-original-project-fully-remodeled)
+- [Why this studio?](#why-this-studio)
+- [What you can do](#what-you-can-do)
+- [Autopilot: one request → one MP4](#autopilot-one-request--one-mp4)
+- [The AI assistant: it proposes, you apply](#the-ai-assistant-it-proposes-you-apply)
+- [Footage editing: EDL → FFmpeg](#footage-editing-edl--ffmpeg)
+- [The 4 laws of the studio](#the-4-laws-of-the-studio)
+- [Tech stack](#tech-stack)
+- [Quick start](#quick-start)
 - [Architecture](#architecture)
-- [Sécurité](#sécurité)
-- [Tests & vérifications](#tests--vérifications)
-- [Structure du projet](#structure-du-projet)
-- [Limites connues](#limites-connues)
-- [Licence](#licence)
-- [Documentation complète](#documentation-complète)
+- [Security](#security)
+- [Tests & verification](#tests--verification)
+- [Project structure](#project-structure)
+- [Known limitations](#known-limitations)
+- [License](#license)
+- [Full documentation](#full-documentation)
 
 ---
 
-## Pourquoi ce studio ?
+## Why this studio?
 
-Ce qui distingue `shorts-studio` d'un énième « générateur de vidéos IA » :
+What sets `shorts-studio` apart from yet another "AI video generator":
 
-| Point fort | Ce que ça change concrètement |
+| Strength | What it actually changes |
 | --- | --- |
-| **Œuvre originale et propriétaire** | Architecture, format v2, effets, assistant, moteur EDL/FFmpeg : tout est conçu et réécrit pour ce studio. Remotion et OpenMontage ne sont que des fondations remodelées — pas le produit. |
-| **Local-first, sans cloud obligatoire** | Tout tourne sur `127.0.0.1`. Vos rushes, vos textes, vos clés API ne quittent pas la machine. Aucun compte, aucun abonnement, aucune télémétrie. Le studio reste **entièrement utilisable même si le serveur LLM est éteint**. |
-| **Le plan affiché est exactement ce qui est rendu** | L'aperçu Remotion Player et le rendu CLI partagent **la même composition**. Pas de surprise « ce n'était pas ça à l'écran ». Une seule entrée de rendu, un seul moteur. |
-| **L'IA propose, l'humain applique** | L'assistant ne déclenche **jamais** un rendu, une suppression, un lot ou un téléchargement sans un clic. Chaque action sensible passe par un jeton de confirmation et une re-vérification de fraîcheur. |
-| **Déterministe et reproductible** | Le bloc `resolved` (frames, fenêtres d'animation, polices, graine) est calculé côté serveur, jamais par le LLM. Même projet + même graine = même vidéo, à la frame près. |
-| **Zéro dépendance lourde installée en douce** | Pas de LangChain, pas de SDK OpenAI, pas d'ORM, pas de Docker. L'assistant parle l'API OpenAI-compatible en `httpx` brut. Whisper local est **détecté, jamais installé**. |
-| **Un vrai pont footage, pas un gadget** | Le montage réel (rushes, transitions, musique, étalonnage) passe par un contrat EDL fermé puis FFmpeg. Remotion reste le moteur du motion design. Chaque moteur fait ce qu'il fait de mieux. |
-| **Pensé pour la livraison commerciale** | Packs de marque client, sous-titres calés sur les frames rendues, miniatures, métadonnées, manifeste, ZIP prêt à envoyer. Le studio produit un **livrable**, pas juste un MP4. |
-| **467 tests, des mesures réelles** | Chaque garde-fou est couvert par un test. Les performances annoncées sont **mesurées sur ce poste**, pas déduites d'un nom de modèle. |
+| **Original, proprietary work** | Architecture, v2 format, effects, assistant, EDL/FFmpeg engine: everything is designed and rewritten for this studio. Remotion and OpenMontage are remodeled foundations — not the product. |
+| **Local-first, no mandatory cloud** | Everything runs on `127.0.0.1`. Your rushes, your text, your API keys never leave the machine. No account, no subscription, no telemetry. The studio stays **fully usable even with the LLM server turned off**. |
+| **The plan you see is exactly what gets rendered** | The Remotion Player preview and the CLI render share **the same composition**. No "that's not what was on screen" surprise. A single render entry point, a single engine. |
+| **The AI proposes, the human applies** | The assistant **never** triggers a render, a deletion, a batch or a download without a click. Every sensitive action goes through a confirmation token and a freshness re-check. |
+| **Deterministic and reproducible** | The `resolved` block (frames, animation windows, fonts, seed) is computed server-side, never by the LLM. Same project + same seed = same video, frame for frame. |
+| **No heavy dependency installed on the sly** | No LangChain, no OpenAI SDK, no ORM, no Docker. The assistant speaks the OpenAI-compatible API with raw `httpx`. Local Whisper is **detected, never installed**. |
+| **A real footage bridge, not a gimmick** | Real editing (rushes, transitions, music, grading) goes through a closed EDL contract then FFmpeg. Remotion stays the motion-design engine. Each engine does what it does best. |
+| **Built for commercial delivery** | Client brand packs, captions aligned to the rendered frames, thumbnails, metadata, manifest, ready-to-send ZIP. The studio produces a **deliverable**, not just an MP4. |
+| **467 tests, real measurements** | Every guardrail is covered by a test. The advertised performance is **measured on this machine**, not inferred from a model name. |
 
 ---
 
-## Ce que vous pouvez faire
+## What you can do
 
-Le studio s'organise en **cinq axes** (plus un héritage d'outils conservés), accessibles depuis
-une navigation groupée de **11 pages** et une palette de commandes (`Ctrl+K`).
+The studio is organized into **five axes** (plus a legacy of kept tools), reachable through a grouped
+navigation of **11 pages** and a command palette (`Ctrl+K`).
 
-| Axe | La question à laquelle il répond | Page | Moteur |
+| Axis | The question it answers | Page | Engine |
 | --- | --- | --- | --- |
-| **DESIGN** | « Comment ma vidéo doit-elle être faite ? » — scènes, calques, textes, polices, couleurs, animations, audio, cadre, marque du client. | `/design` | Remotion |
-| **PRODUCTION** | « Comment en faire 200 sans ouvrir l'éditeur ? » — modèle + CSV + dossiers de médias → plan → file de rendu. | `/production` | Remotion, en série |
-| **MOMENTS FORTS** | « Qu'est-ce qui vaut un clip dans cette source ? » — transcription Whisper, fenêtres scorées et **expliquées**, puis au clic un projet sous-titré. | `/moments` | Whisper + FFmpeg + Remotion |
-| **LIVRAISON** | « Comment je l'envoie au client ? » — un lot rendu devient un ZIP : MP4, `.srt`, miniatures, métadonnées, manifeste, `LISEZ-MOI.txt`. | `/delivery` | `zipfile` + FFmpeg |
-| **ASSISTANT IA** | « Dis-moi ce que tu veux, je prépare le projet ou le mapping. » — tiroir global présent sur toutes les pages (`Ctrl+I`). | partout | LLM local / Gemini / Groq |
-| *Héritage* | Outils antérieurs conservés et branchés sur le web : Clips YouTube, Podcast, Shorts v1, Projets. | `/clips` `/podcast` `/short-videos` `/projects` | yt-dlp + Groq + FFmpeg |
+| **DESIGN** | "How should my video be made?" — scenes, layers, text, fonts, colors, animations, audio, frame, client brand. | `/design` | Remotion |
+| **PRODUCTION** | "How do I make 200 without opening the editor?" — template + CSV + media folders → plan → render queue. | `/production` | Remotion, in series |
+| **HIGHLIGHTS** | "What is worth a clip in this source?" — Whisper transcription, scored and **explained** windows, then on click a captioned project. | `/moments` | Whisper + FFmpeg + Remotion |
+| **DELIVERY** | "How do I send it to the client?" — a rendered batch becomes a ZIP: MP4, `.srt`, thumbnails, metadata, manifest, `LISEZ-MOI.txt`. | `/delivery` | `zipfile` + FFmpeg |
+| **AI ASSISTANT** | "Tell me what you want, I'll prepare the project or the mapping." — global drawer present on every page (`Ctrl+I`). | everywhere | Local LLM / Gemini / Groq |
+| *Legacy* | Earlier tools kept and wired to the web: YouTube Clips, Podcast, Shorts v1, Projects. | `/clips` `/podcast` `/short-videos` `/projects` | yt-dlp + Groq + FFmpeg |
 
-### Les capacités qui font la différence
+### The capabilities that make the difference
 
-- **25 effets de motion design** rendus sans paquet supplémentaire (Transform/CSS, filtres SVG,
-  masques, canvas 2D, `@remotion/paths`) : transitions, étalonnage, parallaxe, plasma, chroma key,
-  audio-réactif… Chaque effet a ses réglages et ses bornes, connus de l'éditeur **et** de l'assistant.
-- **5 familles de polices** sur disque sous licence SIL OFL (Anton, Archivo Black, Inter,
-  Playfair Display, Space Grotesk), mesurées avant rendu pour signaler tout débordement.
-- **Voix off locale** : catalogue de **234 voix, 53 langues** (Piper + Kokoro), synthèse hors ligne.
-  Les voix sont vérifiées et leur licence consignées — rien n'est téléchargé sans votre clic.
-- **Sous-titres cinétiques alignés sur la voix** : un alignement forcé « léger » lit le WAV de la
-  voix off (bibliothèque standard seule, aucun ASR) et cale chaque mot à la frame près. Déterministe.
-- **B-roll automatique** : le moteur rapproche les mots d'une scène des médias déjà importés et
-  pose un visuel pertinent — **sans aucun LLM**, best-effort, jamais par-dessus un fond choisi.
-- **Génération d'images** via Pollinations (API publique **sans clé**) : l'image revient en local
-  et devient un média normal `media://<id>`, assignable par les opérations déjà validées.
-- **Formats sociaux dérivés** : du master 9:16, le studio dérive le 1:1 et le 16:9 par recadrage
-  centré FFmpeg, **sans re-rendu Remotion**.
-- **Packs de marque client** : ce qui se répète d'une vidéo à l'autre (thème, logo, musique,
-  modèles autorisés) appliqué à un projet ou à tout un lot — sans jamais toucher aux scènes ni au texte.
+- **25 motion-design effects** rendered with no extra package (Transform/CSS, SVG filters, masks,
+  2D canvas, `@remotion/paths`): transitions, grading, parallax, plasma, chroma key, audio-reactive…
+  Each effect has its settings and bounds, known to both the editor **and** the assistant.
+- **5 font families** on disk under SIL OFL license (Anton, Archivo Black, Inter, Playfair Display,
+  Space Grotesk), measured before rendering to flag any overflow.
+- **Local voice-over**: a catalog of **234 voices, 53 languages** (Piper + Kokoro), offline synthesis.
+  Voices are verified and their licenses recorded — nothing is downloaded without your click.
+- **Kinetic captions aligned to the voice**: a "light" forced alignment reads the voice-over WAV
+  (standard library only, no ASR) and pins each word to the frame. Deterministic.
+- **Automatic B-roll**: the engine matches a scene's words against already-imported media and places
+  a relevant visual — **with no LLM at all**, best-effort, never over a chosen background.
+- **Image generation** via Pollinations (public API, **no key**): the image comes back locally and
+  becomes a normal `media://<id>` media, assignable through the already-validated operations.
+- **Derived social formats**: from the 9:16 master, the studio derives 1:1 and 16:9 by centered
+  FFmpeg cropping, **with no Remotion re-render**.
+- **Client brand packs**: what repeats from one video to the next (theme, logo, music, allowed
+  templates) applied to a project or a whole batch — never touching scenes or text.
 
 ---
 
-## L'autopilote : une demande → un MP4
+## Autopilot: one request → one MP4
 
-L'autopilote est le mode « réalisateur autonome ». **Un seul appel LLM** produit un plan complet
-et validé ; ensuite, **tout est déterministe, sans nouvel appel** :
+Autopilot is the "autonomous director" mode. **A single LLM call** produces a complete, validated
+plan; after that, **everything is deterministic, with no further call**:
 
 ```
-une demande
+one request
     │
-    ▼  1 appel LLM → plan validé (autopilot_plan)
+    ▼  1 LLM call → validated plan (autopilot_plan)
 ┌─────────────────────────────────────────────────────────┐
-│  SCRIPT     textes appliqués (opérations validées)        │
-│  DESIGN     mise en scène + effets + B-roll automatique   │
-│  VOIX OFF   synthèse TTS + alignement des sous-titres     │
-│  EXPORT     rendu MP4 + audit technique optionnel         │
+│  SCRIPT     text applied (validated operations)           │
+│  DESIGN     staging + effects + automatic B-roll          │
+│  VOICE-OVER TTS synthesis + caption alignment             │
+│  EXPORT     MP4 render + optional technical audit         │
 └─────────────────────────────────────────────────────────┘
     │
-    ▼  un MP4, des sous-titres calés, une miniature
+    ▼  an MP4, aligned captions, a thumbnail
 ```
 
-Ce qui rend l'autopilote robuste :
+What makes autopilot robust:
 
-- **Auto-reprise** : chaque transition est persistée sur disque (`projects/autopilot/<job>.json`).
-  Après un arrêt du serveur, le plan reprend à la première étape non terminée via `start(job_id=…)`.
-  Les échecs transitoires (moteur vocal, rendu, disque) sont rejoués une fois — sans clic ni coût LLM.
-- **Auto-correction bornée** : un audit sonde le DOM et les mesures sur quelques frames ; si des
-  défauts sont **mesurés**, 0 à 2 appels LLM corrigent et re-rendent. Jamais de boucle infinie.
-- **Annulation propre** : la synthèse vocale et le rendu respectent le `cancel_event` du job ;
-  aucun fichier provisoire ne reste.
-- **Honnêteté de l'audit** : le LLM texte ne voit pas les images. Il ne prétend jamais avoir vérifié
-  le contraste sur fond média, le mouvement intégral ou l'esthétique. Le succès visuel reste à
-  confirmer par une personne.
+- **Auto-resume**: every transition is persisted to disk (`projects/autopilot/<job>.json`). After a
+  server stop, the plan resumes at the first unfinished step via `start(job_id=…)`. Transient
+  failures (voice engine, render, disk) are replayed once — no click, no LLM cost.
+- **Bounded auto-correction**: an audit probes the DOM and measurements on a few frames; if defects
+  are **measured**, 0 to 2 LLM calls correct and re-render. Never an infinite loop.
+- **Clean cancellation**: voice synthesis and rendering honor the job's `cancel_event`; no temporary
+  file is left behind.
+- **Honest auditing**: the text LLM does not see images. It never claims to have checked contrast
+  over media backgrounds, full motion or aesthetics. Visual success still needs a human to confirm.
 
 ---
 
-## L'assistant IA : il propose, vous appliquez
+## The AI assistant: it proposes, you apply
 
-L'assistant n'est pas un chatbot générique : il **connaît le studio en lisant son code** (registre
-de compositions, schéma v2, catalogue des 25 effets, polices, `web/package.json`). Il ne récite pas
-une documentation et n'invente ni paquet `@remotion/*` absent, ni effet hors catalogue.
+The assistant is not a generic chatbot: it **knows the studio by reading its code** (composition
+registry, v2 schema, catalog of 25 effects, fonts, `web/package.json`). It does not recite
+documentation and never invents an absent `@remotion/*` package or an off-catalog effect.
 
-**Trois fournisseurs, aucun basculement automatique** : LLM local (OpenAI-compatible), Gemini, Groq.
-Les réglages sont séparés ; les clés ne sortent jamais du serveur.
+**Three providers, no automatic fallback**: local LLM (OpenAI-compatible), Gemini, Groq. Settings are
+separate; keys never leave the server.
 
-### Le contrat des propositions
+### The proposal contract
 
-L'assistant produit une **proposition typée** (`project_new`, `project_patch`, `library_save`,
-`batch_plan`, `autopilot_plan`, `question`, `unavailable`), validée côté serveur par le métier
-existant, puis **acceptée par un clic**. Tant que vous n'avez pas cliqué :
+The assistant produces a **typed proposal** (`project_new`, `project_patch`, `library_save`,
+`batch_plan`, `autopilot_plan`, `question`, `unavailable`), validated server-side by the existing
+business logic, then **accepted with a click**. Until you click:
 
-- le candidat vit en mémoire vive seulement, jamais dans l'autosauvegarde ;
-- le bloc `resolved` fourni par le modèle est **toujours retiré** ;
-- un média n'est accepté qu'en `media://<uuid>` — tout chemin disque est rejeté.
+- the candidate lives in memory only, never in the autosave;
+- the `resolved` block supplied by the model is **always stripped**;
+- a media is accepted only as `media://<uuid>` — any disk path is rejected.
 
-### 32 outils, une frontière nette
+### 32 tools, a clear boundary
 
-| Famille | Rôle | Exécution |
+| Family | Role | Execution |
 | --- | --- | --- |
-| **22 outils de lecture** | projet, modèles, polices, médias, CSV, plan, lots, effets, pipelines montage, validation EDL… | libres, bornés |
-| **6 outils de proposition** | produire une `Proposal` validée | sans effet de bord |
-| **4 outils d'exécution** | appliquer, enregistrer, exporter, lancer un lot | **seulement sur clic utilisateur** |
+| **22 read tools** | project, templates, fonts, media, CSV, plan, batches, effects, montage pipelines, EDL validation… | free, bounded |
+| **6 proposal tools** | produce a validated `Proposal` | no side effects |
+| **4 execution tools** | apply, save, export, start a batch | **only on a user click** |
 
-`tools.describe()` publie la liste **et les interdits** : pas de shell, pas d'`eval`/`exec`, pas de
-chemin disque choisi par le modèle, pas d'installation de dépendances, pas de suppression, pas de
-rendu ni de lot sans clic. Les CSV et documents sont traités comme des **données** (clause
-anti-injection dans le prompt).
+`tools.describe()` publishes the list **and the prohibitions**: no shell, no `eval`/`exec`, no
+model-chosen disk path, no dependency installation, no deletion, no render or batch without a click.
+CSVs and documents are treated as **data** (anti-injection clause in the prompt).
 
-### Transparence
+### Transparency
 
-Chaque réponse porte un `meta` : mode de prompt, tokens d'entrée estimés, budget de contexte,
-tentatives, modèles et latences observés. Les réponses LLM ne sont pas journalisées ; une erreur de
-contrat est renvoyée telle quelle au modèle pour réparation, puis à l'utilisateur en clair — jamais
-masquée par une réponse approximative.
+Every response carries a `meta`: prompt mode, estimated input tokens, context budget, attempts,
+observed models and latencies. LLM responses are not logged; a contract error is returned verbatim to
+the model for repair, then to the user in plain language — never hidden behind an approximate answer.
 
 ---
 
-## Le montage footage : EDL → FFmpeg
+## Footage editing: EDL → FFmpeg
 
-Le studio ne se limite pas au motion design : il assemble aussi du **footage réel** (rushes,
-transitions, musique, étalonnage). La répartition des moteurs est assumée :
+The studio is not limited to motion design: it also assembles **real footage** (rushes, transitions,
+music, grading). The engine split is deliberate:
 
-- **Remotion** rend les compositions animées v2 (motion design, titres, sous-titres) ;
-- **FFmpeg** assemble le footage réel via un contrat **EDL** (edit decision list).
+- **Remotion** renders the v2 animated compositions (motion design, titles, captions);
+- **FFmpeg** assembles real footage through an **EDL** (edit decision list) contract.
 
-Le contrat EDL et le moteur d'assemblage en trois passes sont une **implémentation maison** :
-la grammaire OpenMontage n'a servi que de référence documentaire, aucun de ses exécutables n'est
-utilisé. Le pont, branché de bout en bout :
+The EDL contract and the three-pass assembly engine are a **home-grown implementation**: the
+OpenMontage grammar served only as documentation reference, none of its executables are used.
+The bridge, wired end to end:
 
 ```
-l'assistant produit edit_decisions (EDL)
-    │  cuts media:// déjà ingérés, transitions, musique, étalonnage
+the assistant produces edit_decisions (EDL)
+    │  cuts of already-ingested media://, transitions, music, grading
     ▼
-validate_montage          ← outil de lecture : erreurs indexées + contrat EDL, sans écriture
+validate_montage          ← read tool: indexed errors + EDL contract, no writing
     ▼
-montage_render {edl,name} ← action confirmée : EDL normalisé figé, anti-écrasement,
-    │                        photographie des médias (taille + mtime) → toute dérive refuse l'exécution
+montage_render {edl,name} ← confirmed action: frozen normalized EDL, no-overwrite,
+    │                        media snapshot (size + mtime) → any drift refuses execution
     ▼
-POST /api/montage         ← job annulable, rendu FFmpeg en trois passes
+POST /api/montage         ← cancellable job, three-pass FFmpeg render
     ▼
-MP4 + probe (durée réelle vs planifiée, audio, taille) + « Ouvrir le montage »
+MP4 + probe (real vs planned duration, audio, size) + "Open the edit"
 ```
 
-Le contrat EDL est **fermé** : rôles, transitions et étalonnages hors listes sont refusés ; les
-erreurs sont indexées (`cuts[2].out`) pour que le modèle corrige sans deviner. Bornes : 80 plans max,
-coupes de 0,4 à 120 s, total de 2 à 3600 s, transitions ≤ 40 % du plan le plus court. Le rendu
-FFmpeg en trois passes (normalisation → assemblage → finition) est volontairement robuste : codecs,
-résolutions et fps hétérogènes, rushs muets, fichiers plus courts que prévu.
+The EDL contract is **closed**: roles, transitions and grades outside the lists are rejected; errors
+are indexed (`cuts[2].out`) so the model can fix them without guessing. Bounds: up to 80 cuts, cuts
+from 0.4 to 120 s, total from 2 to 3600 s, transitions ≤ 40% of the shortest cut. The three-pass
+FFmpeg render (normalize → assemble → finish) is deliberately robust: heterogeneous codecs,
+resolutions and fps, silent rushes, files shorter than expected.
 
-> Un plan sans rendu reste un plan : l'assistant ne présente jamais un `edit_decisions` comme une vidéo.
-
----
-
-## Les 4 lois du studio
-
-Elles sont **vérifiables dans le code**, pas seulement écrites ici :
-
-1. **Le plan affiché est exactement ce qui est rendu.** `POST /api/batch/plan` et
-   `POST /api/batch/start` appellent le même `build_plan()`. La file ne réinvente rien.
-2. **Une seule entrée de rendu.** `render_project_to_mp4()` est appelée par l'export unitaire **et**
-   par le worker du lot. Ni deuxième file, ni deuxième moteur.
-3. **Rien n'est jamais rempli en silence.** Un média introuvable **bloque** la ligne ; un texte trop
-   long est **signalé**, jamais coupé ; une licence absente est écrite `inconnue`, jamais validée ;
-   l'assistant ne déclenche aucun rendu, aucune suppression, aucun lot sans clic.
-4. **Aucun chemin Windows ne traverse le projet ni le navigateur.** Les médias sont référencés
-   `media://<uuid>` et servis sous `/media-cache/<id><ext>`. Un pack de marque refuse chemin et URL ;
-   le nom du ZIP de livraison est retrouvé par le serveur, jamais proposé par le client.
+> A plan without a render stays a plan: the assistant never presents an `edit_decisions` as a video.
 
 ---
 
-## Stack technique
+## The 4 laws of the studio
 
-| Couche | Technologies | Rôle |
+They are **verifiable in the code**, not just written here:
+
+1. **The plan you see is exactly what gets rendered.** `POST /api/batch/plan` and
+   `POST /api/batch/start` call the same `build_plan()`. The queue reinvents nothing.
+2. **A single render entry point.** `render_project_to_mp4()` is called by the single export **and**
+   by the batch worker. No second queue, no second engine.
+3. **Nothing is ever filled in silently.** A missing media **blocks** the row; an over-long text is
+   **flagged**, never cut; an absent license is written `inconnue`, never validated; the assistant
+   triggers no render, no deletion, no batch without a click.
+4. **No Windows path crosses the project or the browser.** Media are referenced as `media://<uuid>`
+   and served under `/media-cache/<id><ext>`. A brand pack refuses paths and URLs; the delivery ZIP
+   name is resolved by the server, never proposed by the client.
+
+---
+
+## Tech stack
+
+| Layer | Technologies | Role |
 | --- | --- | --- |
-| **Frontend** | React 18 · TypeScript 5.6 · Vite 6 · Tailwind 3 · Remotion 4.0.539 · Radix UI | édition, aperçu (`@remotion/player`), dialogue, restitution. Zéro logique métier. |
-| **Backend** | Python 3.12 · FastAPI 0.136 · uvicorn · Pydantic 2 · httpx | 16 routeurs, middleware d'origine, bornage des chemins, jobs, sous-processus. |
-| **Moteur métier** | `shortvideos/` (pur, sans FastAPI ni React) | schéma v2, résolution déterministe, validation, lots, effets, EDL, sous-titres, voix, probe. |
-| **Rendu** | Remotion CLI (motion design) · FFmpeg via `imageio-ffmpeg` (footage) | une seule entrée par moteur, Node portable v22. |
-| **Assistant** | `server/agent/` · httpx brut · SQLite FTS5 | client LLM, capacités, retrieval, contrat, 32 outils. Aucune exécution. |
-| **Persistance** | JSON + 2 bases SQLite (file de production, index de connaissances) | SQL écrit à la main, pas d'ORM. |
-| **Voix / ASR** | Piper + Kokoro (TTS local) · Whisper Groq ou local (détecté, jamais installé) | synthèse hors ligne, transcription à la demande. |
+| **Frontend** | React 18 · TypeScript 5.6 · Vite 6 · Tailwind 3 · Remotion 4.0.539 · Radix UI | editing, preview (`@remotion/player`), dialogue, display. Zero business logic. |
+| **Backend** | Python 3.12 · FastAPI 0.136 · uvicorn · Pydantic 2 · httpx | 16 routers, origin middleware, path bounding, jobs, subprocesses. |
+| **Business engine** | `shortvideos/` (pure, no FastAPI or React) | v2 schema, deterministic resolution, validation, batches, effects, EDL, captions, voice, probe. |
+| **Rendering** | Remotion CLI (motion design) · FFmpeg via `imageio-ffmpeg` (footage) | one entry point per engine, portable Node v22. |
+| **Assistant** | `server/agent/` · raw httpx · SQLite FTS5 | LLM client, capabilities, retrieval, contract, 32 tools. No execution. |
+| **Persistence** | JSON + 2 SQLite databases (production queue, knowledge index) | hand-written SQL, no ORM. |
+| **Voice / ASR** | Piper + Kokoro (local TTS) · Whisper Groq or local (detected, never installed) | offline synthesis, on-demand transcription. |
 
-**Volontairement absent** : LangChain, LlamaIndex, SDK OpenAI, SQLAlchemy, CORS (même origine),
-ffprobe (OpenCV + `ffmpeg -i`), CDN/polices distantes, Docker, comptes/auth, installation automatique
-de dépendances, deuxième moteur de rendu.
+**Deliberately absent**: LangChain, LlamaIndex, OpenAI SDK, SQLAlchemy, CORS (same origin), ffprobe
+(OpenCV + `ffmpeg -i`), CDN/remote fonts, Docker, accounts/auth, automatic dependency installation,
+a second render engine.
 
 ---
 
-## Démarrage rapide
+## Quick start
 
-### Prérequis
+### Prerequisites
 
-- **Python 3.12** dans le `PATH`.
-- **Node portable v22** attendu dans `../_tools/node` (le lanceur le place en tête du `PATH`,
-  rien n'est supposé installé globalement).
-- Windows (poste local mono-utilisateur).
+- **Python 3.12** on the `PATH`.
+- **Portable Node v22** expected at `../_tools/node` (the launcher puts it first on the `PATH`;
+  nothing is assumed to be installed globally).
+- Windows (local single-user machine).
 
-### Lancer
+### Run
 
 ```bat
 start_web.bat
 ```
 
-Le lanceur unique fait, dans l'ordre : se place à la racine · prépare le Node portable · vérifie
-Python · construit le frontend si `web/dist` est absent (`npm install` une seule fois, puis
-`tsc --noEmit && vite build`) · démarre uvicorn sur `127.0.0.1:8000` · attend que `/api/health`
-réponde avant d'ouvrir le navigateur. `Ctrl+C` arrête l'application.
+The single launcher does, in order: moves to the root · prepares portable Node · checks Python ·
+builds the frontend if `web/dist` is missing (`npm install` once, then `tsc --noEmit && vite build`) ·
+starts uvicorn on `127.0.0.1:8000` · waits for `/api/health` to respond before opening the browser.
+`Ctrl+C` stops the app.
 
-### Commandes utiles
+### Useful commands
 
-| Objectif | Commande |
+| Goal | Command |
 | --- | --- |
-| Lancer l'application | `start_web.bat` |
-| Reconstruire le frontend | `cd web && npm run build` |
-| Développement à chaud | `cd web && npm run dev` (proxy `/api` → `:8000`) |
-| Types seuls | `cd web && npx tsc --noEmit` |
-| Serveur sans build | `python -m server.app` (`--open` pour ouvrir le navigateur) |
+| Run the app | `start_web.bat` |
+| Rebuild the frontend | `cd web && npm run build` |
+| Hot-reload development | `cd web && npm run dev` (proxy `/api` → `:8000`) |
+| Types only | `cd web && npx tsc --noEmit` |
+| Server without build | `python -m server.app` (`--open` to open the browser) |
 | Tests | `python -m pytest tests -q` → **467 passed** |
-| Santé | `curl http://127.0.0.1:8000/api/health` |
-| Rendu hors interface | `python tests/e2e_export_remotion.py` |
+| Health | `curl http://127.0.0.1:8000/api/health` |
+| Render outside the UI | `python tests/e2e_export_remotion.py` |
 
-### Activer l'assistant (facultatif)
+### Enable the assistant (optional)
 
-Le studio fonctionne sans LLM. Pour activer l'assistant, le **Cockpit** affiche un parcours guidé
-en trois étapes (fournisseur, URL/clé, modèle) tant qu'il n'est pas prêt. Un test réel
-(`POST /api/agent/check`) mesure latence et capacités observées — jamais un résultat déduit du nom
-du modèle. Les clés restent dans `server/settings.json`, jamais renvoyées par HTTP.
+The studio works without an LLM. To enable the assistant, the **Cockpit** shows a guided three-step
+setup (provider, URL/key, model) until it is ready. A real test (`POST /api/agent/check`) measures
+latency and observed capabilities — never a result inferred from the model name. Keys stay in
+`server/settings.json`, never returned over HTTP.
 
 ---
 
 ## Architecture
 
 ```
-Navigateur (http://127.0.0.1:8000)
-  React 18 + TypeScript + Vite + Tailwind  ──>  web/dist servi par FastAPI (même origine)
-       │  Remotion Player 4.0.539 (aperçu = rendu)
-       │  contrat HTTP typé : web/src/api/client.ts
+Browser (http://127.0.0.1:8000)
+  React 18 + TypeScript + Vite + Tailwind  ──>  web/dist served by FastAPI (same origin)
+       │  Remotion Player 4.0.539 (preview = render)
+       │  typed HTTP contract: web/src/api/client.ts
        ▼
 FastAPI + uvicorn — 127.0.0.1:8000 — Python 3.12
-  server/app.py + 16 routeurs + middleware d'origine + bornage des chemins
+  server/app.py + 16 routers + origin middleware + path bounding
        │
-       ├── shortvideos/   moteur métier pur : schéma, résolution, validation, lots,
-       │                  effets, EDL, timeline, sous-titres, voix, b-roll, probe
-       ├── server/agent/  assistant : client LLM, capacités, retrieval FTS5, contrat, outils
-       ├── server/queue   file SQLite persistante + worker + manifeste
-       ├── server/delivery  paquet ZIP d'un lot (job, .part.zip atomique)
-       ├── server/brands    packs de marque client
-       ├── server/moments   transcription, scoring, génération à la demande
-       └── sous-processus : Remotion render (motion design) · FFmpeg (footage EDL)
+       ├── shortvideos/   pure business engine: schema, resolution, validation, batches,
+       │                  effects, EDL, timeline, captions, voice, b-roll, probe
+       ├── server/agent/  assistant: LLM client, capabilities, FTS5 retrieval, contract, tools
+       ├── server/queue   persistent SQLite queue + worker + manifest
+       ├── server/delivery  batch ZIP package (job, atomic .part.zip)
+       ├── server/brands    client brand packs
+       ├── server/moments   transcription, scoring, on-demand generation
+       └── subprocesses: Remotion render (motion design) · FFmpeg (footage EDL)
                                     ▲
-                        Node portable v22 · FFmpeg local (imageio-ffmpeg)
-                        Whisper local détecté, jamais installé
+                        Portable Node v22 · local FFmpeg (imageio-ffmpeg)
+                        Local Whisper detected, never installed
 ```
 
-**Qui fait quoi** : `web/` édite et affiche (zéro métier) · `shortvideos/` porte le métier pur
-(testable seul) · `server/` transporte, sécurise, persiste et lance les sous-processus ·
-`server/agent/` connaît le studio et propose (aucune exécution) · Remotion est la source de vérité
-de l'image animée.
+**Who does what**: `web/` edits and displays (zero business logic) · `shortvideos/` carries the pure
+business logic (testable on its own) · `server/` transports, secures, persists and launches
+subprocesses · `server/agent/` knows the studio and proposes (no execution) · Remotion is the source
+of truth for the animated image.
 
 ---
 
-## Sécurité
+## Security
 
-| Contrôle | Comportement vérifié |
+| Control | Verified behavior |
 | --- | --- |
-| **Écoute** | `127.0.0.1` par défaut, rien publié sur Internet. |
-| **Origine** | `POST`/`PUT`/`DELETE`/`PATCH` d'une origine étrangère ⇒ **403** (y compris une origine distante qui se déclare locale). |
-| **Chemins** | 11 racines autorisées ; hors de ces racines ⇒ **400** ; aucun chemin Windows en URL, médias = `/api/media/<uuid>`. |
-| **Traversée** | `../`, chemins encodés, identifiants invalides ⇒ **400/404**. |
-| **Upload** | types MIME image/vidéo uniquement (sinon **415**), 500 Mo max, fichier vide refusé. |
-| **Clés API** | restent côté serveur ; `GET /api/settings` ne renvoie que des booléens ; rien dans les logs. |
-| **LLM** | ni shell, ni `eval`/`exec`, ni chemin disque choisi par le modèle, ni écriture, ni suppression, ni lancement sans clic. |
-| **CSV / documents** | traités comme des données, clause anti-injection dans le prompt. |
-| **`resolved`** | un bloc fourni par le LLM est toujours retiré. |
-| **Écrasement** | MP4 ou projet existant non remplacé sans règle explicite (**409** puis confirmation). |
-| **Action sensible** | jeton de confirmation (`hmac.compare_digest`) + re-vérification de fraîcheur (médias, EDL) avant exécution. |
+| **Listening** | `127.0.0.1` by default, nothing published to the Internet. |
+| **Origin** | `POST`/`PUT`/`DELETE`/`PATCH` from a foreign origin ⇒ **403** (including a remote origin claiming to be local). |
+| **Paths** | 11 allowed roots; outside these roots ⇒ **400**; no Windows path in URLs, media = `/api/media/<uuid>`. |
+| **Traversal** | `../`, encoded paths, invalid identifiers ⇒ **400/404**. |
+| **Upload** | image/video MIME types only (otherwise **415**), 500 MB max, empty file rejected. |
+| **API keys** | stay server-side; `GET /api/settings` returns only booleans; nothing in logs. |
+| **LLM** | no shell, no `eval`/`exec`, no model-chosen disk path, no writing, no deletion, no launch without a click. |
+| **CSV / documents** | treated as data, anti-injection clause in the prompt. |
+| **`resolved`** | a block supplied by the LLM is always stripped. |
+| **Overwrite** | an existing MP4 or project is not replaced without an explicit rule (**409** then confirmation). |
+| **Sensitive action** | confirmation token (`hmac.compare_digest`) + freshness re-check (media, EDL) before execution. |
 
 ---
 
-## Tests & vérifications
+## Tests & verification
 
 ```bat
 python -m pytest tests -q        →  467 passed
 ```
 
-Les tests couvrent le métier **et** les garde-fous : catalogue des 25 effets (unicité, bornes,
-cohérence catalogue ↔ rendu), validation, timing, plan de lot, file SQLite, livraison (cues calées
-sur `resolve()`, ZIP complet), packs de marque, bout en bout de l'assistant avec un LLM maquillé
-(rien n'est écrit avant acceptation, effet inventé refusé, conflit puis rebase), sécurité des routes,
-contrat EDL et rendu montage.
+The tests cover the business logic **and** the guardrails: catalog of 25 effects (uniqueness, bounds,
+catalog ↔ render consistency), validation, timing, batch plan, SQLite queue, delivery (cues aligned
+to `resolve()`, complete ZIP), brand packs, end-to-end assistant with a mocked LLM (nothing written
+before acceptance, invented effect rejected, conflict then rebase), route security, EDL contract and
+montage render.
 
-**Mesures réelles obtenues sur ce poste** (exécutées, pas déduites) :
+**Real measurements obtained on this machine** (executed, not inferred):
 
-- export unitaire 1080×1920 / 30 fps / 405 frames / 13,5 s, terminé ;
-- rendu réel avec effets : 540×960 / 30 fps / 228 frames / 7,6 s, **chacun des 25 effets** présent,
-  aucun échec de composition ;
-- lot de 3 lignes rendu de bout en bout depuis `/production`, manifestes CSV et JSON téléchargés ;
-- frontend construit sans erreur TypeScript, pages testées dans le navigateur avec **0 erreur console** ;
-- index de connaissances : ~290 documents / ~2 300 sections, FTS5 actif.
+- single export 1080×1920 / 30 fps / 405 frames / 13.5 s, completed;
+- real render with effects: 540×960 / 30 fps / 228 frames / 7.6 s, **each of the 25 effects** present,
+  no composition failure;
+- a 3-row batch rendered end to end from `/production`, CSV and JSON manifests downloaded;
+- frontend built with no TypeScript error, pages tested in the browser with **0 console errors**;
+- knowledge index: ~290 documents / ~2,300 sections, FTS5 active.
 
-> Le contrat de l'assistant est garanti par les tests, pas par une capture de clic : activer un LLM
-> imposerait de modifier le `settings.json` de l'utilisateur, ce que le studio ne fait pas sans clic.
+> The assistant's contract is guaranteed by tests, not by a click capture: enabling an LLM would
+> require modifying the user's `settings.json`, which the studio does not do without a click.
 
 ---
 
-## Structure du projet
+## Project structure
 
 ```
 youtube_clipper/
-├── start_web.bat            lanceur unique (build + serveur + navigateur)
-├── ARCHITECTURE.md          documentation complète (18 chapitres)
-├── requirements.txt         dépendances Python
-├── server/                  backend FastAPI
-│   ├── app.py               application + 16 routeurs
-│   ├── api/                 les routeurs (montage, batch, delivery, agent…)
-│   ├── agent/               assistant : autopilot, tools, proposals, retrieval…
-│   ├── render.py            entrée de rendu Remotion
-│   ├── queue.py             file SQLite + worker
-│   ├── delivery.py          paquet ZIP d'un lot
-│   ├── imagegen.py          génération d'images (Pollinations, sans clé)
-│   └── security.py          origines, chemins bornés, racines autorisées
-├── shortvideos/             moteur métier pur
-│   ├── schema.py            format de projet v2
-│   ├── resolve.py           bloc resolved déterministe
-│   ├── effects.py           catalogue des 25 effets
-│   ├── edl.py               contrat EDL du montage footage
-│   ├── timeline.py          rendu FFmpeg en trois passes
-│   ├── captions.py          alignement des sous-titres sur la voix
-│   ├── broll.py             B-roll automatique sans LLM
-│   ├── tts.py               voix off locale (Piper + Kokoro)
-│   └── delivery.py          sous-titres, miniatures, formats sociaux
-├── web/                     frontend React + Remotion
-│   ├── src/remotion/        compositions (source de vérité de l'image)
+├── start_web.bat            single launcher (build + server + browser)
+├── ARCHITECTURE.md          full documentation (18 chapters)
+├── requirements.txt         Python dependencies
+├── server/                  FastAPI backend
+│   ├── app.py               application + 16 routers
+│   ├── api/                 the routers (montage, batch, delivery, agent…)
+│   ├── agent/               assistant: autopilot, tools, proposals, retrieval…
+│   ├── render.py            Remotion render entry point
+│   ├── queue.py             SQLite queue + worker
+│   ├── delivery.py          batch ZIP package
+│   ├── imagegen.py          image generation (Pollinations, no key)
+│   └── security.py          origins, bounded paths, allowed roots
+├── shortvideos/             pure business engine
+│   ├── schema.py            v2 project format
+│   ├── resolve.py           deterministic resolved block
+│   ├── effects.py           catalog of 25 effects
+│   ├── edl.py               footage editing EDL contract
+│   ├── timeline.py          three-pass FFmpeg render
+│   ├── captions.py          caption alignment to the voice
+│   ├── broll.py             automatic B-roll, no LLM
+│   ├── tts.py               local voice-over (Piper + Kokoro)
+│   └── delivery.py          captions, thumbnails, social formats
+├── web/                     React + Remotion frontend
+│   ├── src/remotion/        compositions (source of truth for the image)
 │   ├── src/components/      pages, assistant, UI kit
-│   └── public/fonts/        5 familles SIL OFL
-├── skills/                  paquets de connaissances (Remotion ; montage en local)
+│   └── public/fonts/        5 SIL OFL families
+├── skills/                  knowledge packs (Remotion; montage kept local)
 ├── tests/                   467 tests
-└── brands/ models/ projects/ media/ exports/ batch/   (données, hors dépôt)
+└── brands/ models/ projects/ media/ exports/ batch/   (data, out of repo)
 ```
 
 ---
 
-## Limites connues
+## Known limitations
 
-Le studio est honnête sur ce qu'il ne fait pas :
+The studio is honest about what it does not do:
 
-- **Mono-poste, mono-utilisateur** : pas de comptes, pas de file partagée ; un seul lot actif à la fois.
-- **2 000 lignes CSV maximum** ; sortie verticale 9:16 en pratique (autres cadres non testés).
-- **Pas de vraie 3D, ni morphing vectoriel libre, ni LUT externe, ni WebGL** : les 25 effets sont
-  rendus avec ce qui est déjà installé (CSS 3D sur plans, filtres SVG, canvas 2D). Les 3 effets
-  audio-réactifs ne bougent que si un audio réel est présent.
-- **L'assistant ne voit pas l'image** : il raisonne sur le JSON, les capacités et les documents,
-  jamais sur les frames rendues. L'audit technique ne garantit pas l'esthétique.
-- **Les sous-titres livrés ne sont pas une transcription de la voix** : ils reprennent le texte des
-  calques réellement affichés. Pas d'ASR dans la chaîne de livraison (aucune installation automatique).
-- **Pas de montage audio automatique** (beat-matching, ducking dynamique) : bouclage, rognage, fondus.
-- **Whisper local détecté, jamais installé** ; aucun basculement local ↔ cloud automatique.
-- `server/settings.json` est en clair sur le disque local (poste mono-utilisateur) ; il ne sort
-  jamais par HTTP.
+- **Single-machine, single-user**: no accounts, no shared queue; one active batch at a time.
+- **2,000 CSV rows maximum**; vertical 9:16 output in practice (other frames untested).
+- **No real 3D, no free vector morphing, no external LUT, no WebGL**: the 25 effects are rendered with
+  what is already installed (CSS 3D on planes, SVG filters, 2D canvas). The 3 audio-reactive effects
+  only move if real audio is present.
+- **The assistant does not see the image**: it reasons over JSON, capabilities and documents, never
+  over rendered frames. The technical audit does not guarantee aesthetics.
+- **Delivered captions are not a voice transcription**: they reuse the text of the layers actually
+  displayed. No ASR in the delivery pipeline (no automatic installation).
+- **No automatic audio editing** (beat-matching, dynamic ducking): looping, trimming, fades.
+- **Local Whisper detected, never installed**; no automatic local ↔ cloud fallback.
+- `server/settings.json` is in clear text on the local disk (single-user machine); it never goes out
+  over HTTP.
 
-La liste exhaustive et les recettes d'extension sont dans [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
----
-
-## Licence
-
-Le code de `shorts-studio` — l'architecture, le format v2, les effets, l'assistant, l'autopilote,
-le moteur EDL/FFmpeg et toute la chaîne de livraison — est une **œuvre originale** sous licence
-**Apache 2.0** — voir [`LICENSE`](LICENSE).
-
-**Bibliothèques tierces.** Remotion est utilisé comme moteur de rendu, sous **sa propre licence**
-(éditeur Remotion) ; il n'est ni modifié ni redistribué comme partie prenante du projet. FFmpeg,
-Piper, Kokoro et les autres dépendances restent sous leurs licences respectives.
-
-**Note sur le paquet montage.** La grammaire de production importée d'OpenMontage
-(`skills/montage/`, licence **AGPL-3.0**) n'est qu'une **référence documentaire lue en local** :
-elle est **exclue du dépôt public** (gitignorée) et aucun code exécutable d'OpenMontage n'est
-copié dans le studio — seuls des manifestes et fiches sont lus, en lecture seule, par l'assistant.
-Le moteur de montage, lui, est entièrement réécrit (voir plus haut). Les tests restent verts sans
-ce paquet. Sa provenance (source, commit, licence) est consignée dans `skills/montage/PROVENANCE.md`
-(local).
-
-Les polices livrées sont sous licence **SIL OFL** ; les voix TTS portent leurs licences respectives
-(Piper GPL-3.0 pour le code, Kokoro MIT / modèle Apache-2.0), consignées dans le catalogue.
+The exhaustive list and extension recipes are in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ---
 
-## Documentation complète
+## License
 
-Ce README est la vitrine. La référence exhaustive — chaque fichier, chaque champ du format v2,
-chaque page panneau par panneau, chaque route, chaque garde-fou et son test, les limites et les
-recettes d'extension — vit dans un seul document :
+The code of `shorts-studio` — the architecture, the v2 format, the effects, the assistant, the
+autopilot, the EDL/FFmpeg engine and the whole delivery pipeline — is an **original work** under the
+**Apache 2.0** license — see [`LICENSE`](LICENSE).
 
-**[`ARCHITECTURE.md`](ARCHITECTURE.md)** — 18 chapitres, la seule documentation de référence du projet.
+**Third-party libraries.** Remotion is used as a render engine under **its own license** (Remotion
+editor); it is neither modified nor redistributed as part of the project. FFmpeg, Piper, Kokoro and
+the other dependencies remain under their respective licenses.
+
+**Note on the montage pack.** The production grammar imported from OpenMontage (`skills/montage/`,
+**AGPL-3.0** license) is only a **documentation reference read locally**: it is **excluded from the
+public repository** (gitignored) and no executable code from OpenMontage is copied into the studio —
+only manifests and sheets are read, read-only, by the assistant. The editing engine itself is entirely
+rewritten (see above). Tests stay green without this pack. Its provenance (source, commit, license) is
+recorded in `skills/montage/PROVENANCE.md` (local).
+
+The shipped fonts are under **SIL OFL** license; TTS voices carry their respective licenses (Piper
+GPL-3.0 for the code, Kokoro MIT / model Apache-2.0), recorded in the catalog.
+
+---
+
+## Full documentation
+
+This README is the showcase. The exhaustive reference — every file, every field of the v2 format,
+every page panel by panel, every route, every guardrail and its test, the limitations and the
+extension recipes — lives in a single document:
+
+**[`ARCHITECTURE.md`](ARCHITECTURE.md)** — 18 chapters, the project's only reference documentation.
 
 <div align="center">
 
 ---
 
-*Conçu pour rester local, déterministe et honnête : le studio propose, vous décidez.*
+*Built to stay local, deterministic and honest: the studio proposes, you decide.*
 
 </div>
