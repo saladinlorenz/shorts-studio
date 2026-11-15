@@ -976,6 +976,18 @@ export const api = {
   exportFileUrl: (jobId: string) => `/api/exports/${encodeURIComponent(jobId)}/file`,
   /** URL de relecture d'un montage footage terminé (action montage_render). */
   montageFileUrl: (jobId: string) => `/api/montage/${encodeURIComponent(jobId)}/file`,
+  /** Contrôle un EDL sans rien écrire : erreurs indexées, durée, plan normalisé. */
+  validateMontage: (edl: Edl) =>
+    request<MontageValidation>("/api/montage/validate", {
+      method: "POST",
+      body: JSON.stringify({ edl }),
+    }),
+  /** Lance le rendu FFmpeg d'un EDL valide ; le MP4 sort dans exports/. */
+  startMontage: (edl: Edl, name: string, overwrite: boolean) =>
+    request<{ job_id: string }>("/api/montage", {
+      method: "POST",
+      body: JSON.stringify({ edl, name, overwrite }),
+    }),
 
   // Réglages
   getSettings: () => request<SettingsPublic>("/api/settings"),
@@ -1219,6 +1231,59 @@ export interface TtsGenerateResult {
   sample_rate: number;
   voice: string;
   engine: string;
+}
+
+/** Transition d'un plan de montage footage (vocabulaire fermé côté serveur). */
+export interface EdlTransition {
+  type: string;
+  duration: number;
+}
+
+/** Un plan du montage : un rush media://, de in à out, avec son rôle et sa transition. */
+export interface EdlCut {
+  media: string;
+  in: number;
+  out: number;
+  role: string;
+  reason?: string;
+  transition: EdlTransition;
+}
+
+/** Contrat EDL du montage footage (shortvideos/edl.py). */
+export interface Edl {
+  version: number;
+  canvas: { width: number; height: number; fps: number };
+  cuts: EdlCut[];
+  audio:
+    | { music?: string; gain_db?: number; duck?: boolean; fade_in?: number; fade_out?: number }
+    | Record<string, never>;
+  grade: { look: string; saturation: number; contrast: number };
+}
+
+/** Réponse de POST /api/montage/validate : contrôle sans écriture. */
+export interface MontageValidation {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  duration_seconds: number;
+  cuts: number;
+  edl: Edl;
+}
+
+/** Résultat d'un rendu de montage (job.result). */
+export interface MontageResult {
+  path: string;
+  width: number;
+  height: number;
+  fps: number;
+  duration: number;
+  planned_duration: number;
+  size_bytes: number;
+  cuts: number;
+  music: boolean;
+  grade: string;
+  has_audio: boolean;
+  warnings: string[];
 }
 
 /** Convertit une référence de projet en URL serveur. */

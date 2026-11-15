@@ -1,6 +1,7 @@
 import {
   AudioLines,
   Clapperboard,
+  Film,
   FolderOpen,
   Gauge,
   Layers,
@@ -68,6 +69,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Voix off",
         icon: Volume2,
         description: "Synthèse vocale locale : texte → WAV, catalogue multilingue Piper et Kokoro",
+      },
+      {
+        to: "/montage",
+        label: "Montage",
+        icon: Film,
+        description: "Montage footage : plans, transitions, musique, étalonnage, rendu FFmpeg d'un EDL",
       },
     ],
   },

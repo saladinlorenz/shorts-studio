@@ -19,6 +19,7 @@ import PodcastPage from "./pages/PodcastPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import SettingsPage from "./pages/SettingsPage";
 import TtsPage from "./pages/TtsPage";
+import MontagePage from "./pages/MontagePage";
 
 /**
  * Coquille du studio.
@@ -176,6 +177,7 @@ function Shell() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/tts" element={<TtsPage />} />
+          <Route path="/montage" element={<MontagePage />} />
           <Route path="*" element={<StudioPage />} />
         </Routes>
       </main>
