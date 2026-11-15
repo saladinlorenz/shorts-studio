@@ -20,7 +20,7 @@ import json
 import pytest
 
 from server import jobs, media, render
-from server.agent import llm_client, review
+from server.agent import llm_client, proposals, review
 from shortvideos import fonts, schema
 
 
@@ -230,3 +230,166 @@ def test_source_project_never_mutated(monkeypatch, no_fonts, fake_import):
     before = copy.deepcopy(project)
     review.review_project(jobs.Job("test"), project, "vérifie", {"max_tokens": 8000})
     assert project == before
+
+
+# --------------------------------------------------------------------------- #
+# Passe de vision optionnelle (bornée, advisory, séparée de la boucle texte)
+# --------------------------------------------------------------------------- #
+
+def _fake_chat_routing(monkeypatch, correction=None, vision=None, vision_error=None):
+    """Aiguille selon le type de contenu : liste = vision, chaîne = correction texte."""
+    seen = {"correction": [], "vision": [], "n": 0}
+
+    def chat(messages, cfg=None, max_tokens=None, json_mode=True, cancel=None, stream=False):
+        seen["n"] += 1
+        if any(isinstance(m.get("content"), list) for m in messages):
+            seen["vision"].append(messages)
+            if vision_error is not None:
+                raise vision_error
+            payload = vision if vision is not None else {"summary": "vu", "findings": []}
+            return FakeResult(json.dumps(payload, ensure_ascii=False))
+        seen["correction"].append(messages)
+        payload = correction if correction is not None else {"summary": "ok", "operations": []}
+        return FakeResult(json.dumps(payload, ensure_ascii=False))
+
+    monkeypatch.setattr(llm_client, "chat", chat)
+    return seen
+
+
+def test_vision_findings_validation_is_bounded_and_normalized():
+    used = [10, 20]
+    reply = {"summary": "s", "findings": [
+        {"frame": 20, "issue": "contraste faible", "severity": "warning"},
+        {"frame": 999, "issue": "frame inconnu", "severity": "critical"},
+        {"frame": 10, "issue": "x", "severity": "n'importe quoi"},
+        {"issue": ""},
+        "pas un dict",
+    ]}
+    out = review._vision_findings(reply, used)
+    assert len(out) == 3
+    assert out[0] == {"frame": 20, "issue": "contraste faible", "severity": "warning"}
+    assert out[1]["frame"] == 10  # frame hors images montrées -> ramené au premier
+    assert out[2]["severity"] == "info"  # sévérité inconnue -> info
+    many = {"findings": [{"frame": 10, "issue": f"i{i}", "severity": "info"} for i in range(30)]}
+    assert len(review._vision_findings(many, used)) == review._VISION_MAX_FINDINGS
+    with pytest.raises(proposals.ProposalError):
+        review._vision_findings({"summary": "s"}, used)
+
+
+def test_vision_pass_disabled_short_circuits(tmp_path, monkeypatch):
+    def never(*args, **kwargs):
+        raise AssertionError("Le LLM ne doit pas être appelé quand la vision est désactivée.")
+
+    monkeypatch.setattr(llm_client, "chat", never)
+    out = review._vision_pass(jobs.Job("test"), tmp_path, [0], {"max_tokens": 8000}, "p")
+    assert out == {"ran": False, "reason": "disabled"}
+
+
+def test_vision_pass_bounded_to_four_frames(tmp_path, monkeypatch):
+    for frame in range(6):
+        (tmp_path / f"frame-{frame}.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    seen = {}
+
+    def chat(messages, **kwargs):
+        seen["messages"] = messages
+        return FakeResult(json.dumps({"summary": "s", "findings": []}))
+
+    monkeypatch.setattr(llm_client, "chat", chat)
+    out = review._vision_pass(
+        jobs.Job("test"), tmp_path, [0, 1, 2, 3, 4, 5],
+        {"vision_review": True, "max_tokens": 8000}, "vérifie",
+    )
+    assert out["ran"] is True
+    assert out["frames_used"] == [0, 1, 2, 3]
+    parts = seen["messages"][1]["content"]
+    images = [p for p in parts if p.get("type") == "image_url"]
+    assert len(images) == 4
+    assert all(p["image_url"]["url"].startswith("data:image/png;base64,") for p in images)
+
+
+def test_vision_pass_no_frames(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_client, "chat", lambda *a, **k: FakeResult("{}"))
+    out = review._vision_pass(jobs.Job("test"), tmp_path, [], {"vision_review": True}, "p")
+    assert out == {"ran": False, "reason": "no_frames"}
+
+
+def test_vision_pass_cancel_respected(tmp_path, monkeypatch):
+    (tmp_path / "frame-0.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    monkeypatch.setattr(llm_client, "chat", lambda *a, **k: FakeResult("{}"))
+    job = jobs.Job("test")
+    job.cancel_event.set()
+    with pytest.raises(jobs.JobCancelled):
+        review._vision_pass(job, tmp_path, [0], {"vision_review": True}, "p")
+
+
+def test_vision_disabled_by_default(monkeypatch, no_fonts, fake_import):
+    _fake_render(monkeypatch, ["clean"])
+    seen = _fake_chat_routing(monkeypatch)
+    result = review.review_project(jobs.Job("test"), _project(), "vérifie", {"max_tokens": 8000})
+    assert seen["n"] == 0
+    assert result["vision"] == {"ran": False, "reason": "disabled"}
+    assert "sans vision" in result["limitations"]
+
+
+def test_vision_enabled_is_advisory_and_sends_images(monkeypatch, no_fonts, fake_import):
+    _fake_render(monkeypatch, ["clean"])
+    seen = _fake_chat_routing(monkeypatch, vision={
+        "summary": "contraste faible",
+        "findings": [{"frame": 0, "issue": "texte peu lisible sur le fond", "severity": "warning"}],
+    })
+    result = review.review_project(
+        jobs.Job("test"), _project(), "vérifie", {"max_tokens": 8000, "vision_review": True},
+    )
+    assert seen["n"] == 1, "projet propre : aucune correction texte, seulement la vision"
+    assert len(seen["vision"]) == 1 and not seen["correction"]
+    parts = seen["vision"][0][1]["content"]
+    assert isinstance(parts, list)
+    assert any(
+        p.get("type") == "image_url" and "data:image/png;base64," in p["image_url"]["url"]
+        for p in parts
+    )
+    assert result["vision"]["ran"] is True
+    assert result["vision"]["findings"]
+    assert result["operations"] == [], "la vision est advisory : aucune opération ajoutée"
+    assert result["verified"] is True
+    assert "sans vision" not in result["limitations"]
+    assert "consultative" in result["limitations"]
+
+
+def test_vision_keeps_correction_loop_text_only(monkeypatch, no_fonts, fake_import):
+    _fake_render(monkeypatch, ["defect", "clean"])
+    seen = _fake_chat_routing(monkeypatch, correction=CORRECTION, vision={"summary": "vu", "findings": []})
+    result = review.review_project(
+        jobs.Job("test"), _project(), "vérifie", {"max_tokens": 8000, "vision_review": True},
+    )
+    assert seen["n"] == 2, "une correction texte + une passe vision, pas plus"
+    assert len(seen["correction"]) == 1 and len(seen["vision"]) == 1
+    for message in seen["correction"][0]:
+        assert isinstance(message["content"], str)
+        assert "data:image" not in message["content"]
+        assert "base64" not in message["content"]
+    assert result["operations"] == CORRECTION["operations"], "la vision n'ajoute aucune opération"
+    assert result["vision"]["ran"] is True
+
+
+def test_vision_model_error_degrades_gracefully(monkeypatch, no_fonts, fake_import):
+    _fake_render(monkeypatch, ["clean"])
+    error = llm_client.LLMError("le modèle ne voit pas les images", llm_client.KIND_HTTP)
+    _fake_chat_routing(monkeypatch, vision_error=error)
+    result = review.review_project(
+        jobs.Job("test"), _project(), "vérifie", {"max_tokens": 8000, "vision_review": True},
+    )
+    assert result["vision"]["ran"] is False
+    assert result["verified"] is True, "l'audit technique reste concluant"
+    assert result["operations"] == []
+    assert "sans vision" in result["limitations"]
+
+
+def test_vision_invalid_reply_degrades(monkeypatch, no_fonts, fake_import):
+    _fake_render(monkeypatch, ["clean"])
+    _fake_chat_routing(monkeypatch, vision={"summary": "s"})  # pas de findings
+    result = review.review_project(
+        jobs.Job("test"), _project(), "vérifie", {"max_tokens": 8000, "vision_review": True},
+    )
+    assert result["vision"]["ran"] is False
+    assert result["operations"] == []

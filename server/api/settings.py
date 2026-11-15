@@ -68,6 +68,7 @@ class LlmSettings(BaseModel):
     max_tool_calls: int | None = None
     stream: bool | None = None
     json_mode: str | None = None
+    vision_review: bool | None = None
 
 
 class AsrSettings(BaseModel):
@@ -136,6 +137,7 @@ def public_llm() -> dict:
         "max_tool_calls": cfg["max_tool_calls"],
         "stream": cfg["stream"],
         "json_mode": cfg["json_mode"],
+        "vision_review": cfg["vision_review"],
         "ready": bool(active["base_url"] and active["model"] and (not active["is_cloud"] or active["key_configured"])),
     }
 
@@ -187,6 +189,8 @@ def _llm_updates(llm: LlmSettings) -> dict:
 
     if llm.stream is not None:
         updates["llm_stream"] = bool(llm.stream)
+    if llm.vision_review is not None:
+        updates["llm_vision_review"] = bool(llm.vision_review)
     if llm.json_mode is not None:
         mode = llm.json_mode.strip().lower()
         if mode not in _JSON_MODES:

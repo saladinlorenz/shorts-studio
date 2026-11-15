@@ -427,8 +427,9 @@ def _step_export(job: jobs.Job, plan: dict, project: dict | None, state: dict, i
         else:
             raise RuntimeError("Trop de fichiers portent ce nom : choisissez un autre nom d'export.")
     info = _render_mp4(job, project, out_path, index, total)
+    vision = None
     if plan.get("review"):
-        project, corrected = _auto_correct(job, project, out_path, index, total)
+        project, corrected, vision = _auto_correct(job, project, out_path, index, total)
         if corrected is not None:
             info = corrected
     made = _derive_formats(job, out_path)
@@ -440,13 +441,16 @@ def _step_export(job: jobs.Job, plan: dict, project: dict | None, state: dict, i
         }
         for f in made
     ]
-    return {
+    result = {
         "name": name,
         "url": f"/api/agent/autopilot/{state['job_id']}/file",
         "size_bytes": info.get("size_bytes"),
         "duration": info.get("duration"),
         "formats": formats,
-    }, project
+    }
+    if vision:
+        result["vision"] = vision
+    return result, project
 
 
 def _derive_formats(job: jobs.Job, out_path: Path) -> list[dict]:
@@ -498,12 +502,13 @@ _REVIEW_PROMPT = (
 )
 
 
-def _auto_correct(job: jobs.Job, project: dict, out_path: Path, index: int, total: int) -> tuple[dict, dict | None]:
+def _auto_correct(job: jobs.Job, project: dict, out_path: Path, index: int, total: int) -> tuple[dict, dict | None, dict | None]:
     """Audit technique du montage rendu, puis correction bornée et re-rendu.
 
     Best-effort : sans LLM prêt, sans défaut mesuré, ou si la correction ne valide
     pas, la première vidéo est conservée — l'export n'échoue jamais pour une revue.
-    Retourne (projet retenu, infos du re-rendu ou None). L'annulation, elle, remonte.
+    Retourne (projet retenu, infos du re-rendu ou None, findings vision ou None).
+    L'annulation, elle, remonte.
     """
     from .. import settings as settings_mod
     from . import llm_client, review
@@ -511,27 +516,28 @@ def _auto_correct(job: jobs.Job, project: dict, out_path: Path, index: int, tota
     cfg = settings_mod.llm_config()
     ready, _ = llm_client.is_ready(cfg)
     if not ready:
-        return project, None
+        return project, None, None
     try:
         jobs.raise_if_cancelled(job)
         result = review.review_project(_RenderJob(job, index, total), project, _REVIEW_PROMPT, cfg)
+        vision = result.get("vision")
         operations = result.get("operations") or []
         if not operations:
-            return project, None
+            return project, None, vision
         candidate, _, op_errors = proposals.apply_operations(project, operations)
         if op_errors:
-            return project, None
+            return project, None, vision
         errors, _ = proposals.validate_candidate(candidate)
         if errors:
-            return project, None
+            return project, None, vision
         jobs.raise_if_cancelled(job)
         info = _render_mp4(job, candidate, out_path, index, total)
         jobs.raise_if_cancelled(job)
-        return candidate, info
+        return candidate, info, vision
     except jobs.JobCancelled:
         raise
     except Exception:  # noqa: BLE001 - une revue ratée ne casse pas l'export déjà rendu
-        return project, None
+        return project, None, None
 
 
 def _step_progress(job: jobs.Job, index: int, total: int):

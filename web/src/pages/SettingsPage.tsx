@@ -569,6 +569,33 @@ export default function SettingsPage() {
           </label>
         </div>
 
+        <div className="mt-3 rounded-md border border-border/70 bg-muted/20 p-2.5">
+          <label className="flex items-start gap-2 text-xs">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={draft.vision_review ?? llm?.vision_review ?? false}
+              onChange={(e) => set({ vision_review: e.target.checked })}
+            />
+            <span>
+              <span className="font-medium">Passe de vision sur l'audit (optionnel)</span>
+              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                Après le rendu, l'assistant regarde quelques images réelles (contraste du texte sur
+                son fond, occlusions, lisibilité) au lieu de la seule géométrie. Un seul appel borné,
+                purement consultatif : il signale, ne corrige rien automatiquement. Désactivé par
+                défaut.
+              </span>
+              {isCloud && (draft.vision_review ?? llm?.vision_review ?? false) && (
+                <span className="mt-1 flex items-start gap-1 text-[11px] text-warning">
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                  Les frames rendues sont envoyées à {provider === "gemini" ? "l'API Gemini" : "l'API Groq"} :
+                  vos images quittent ce poste. Nécessite un modèle acceptant les images.
+                </span>
+              )}
+            </span>
+          </label>
+        </div>
+
         <div className="mt-4 flex items-center gap-2">
           <button
             className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"

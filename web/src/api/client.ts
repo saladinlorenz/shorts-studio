@@ -559,6 +559,7 @@ export interface LlmPublic {
   max_tool_calls: number;
   stream: boolean;
   json_mode: string;
+  vision_review: boolean;
   ready: boolean;
 }
 
@@ -583,6 +584,7 @@ export interface LlmPayload {
   max_tool_calls?: number;
   stream?: boolean;
   json_mode?: string;
+  vision_review?: boolean;
 }
 
 export interface SettingsPublic {

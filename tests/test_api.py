@@ -209,6 +209,19 @@ def test_settings_never_expose_api_key():
     assert res.json()["groq_configured"] in (True, False)
 
 
+def test_settings_vision_review_roundtrip(tmp_path, monkeypatch):
+    from server import settings as settings_mod
+
+    monkeypatch.setattr(settings_mod, "SETTINGS_PATH", tmp_path / "settings.json")
+    assert client.get("/api/settings").json()["llm"]["vision_review"] is False
+    res = client.post("/api/settings", json={"llm": {"vision_review": True}})
+    assert res.status_code == 200
+    assert res.json()["llm"]["vision_review"] is True
+    assert settings_mod.llm_config()["vision_review"] is True
+    res = client.post("/api/settings", json={"llm": {"vision_review": False}})
+    assert res.json()["llm"]["vision_review"] is False
+
+
 # --------------------------------------------------------------- exports
 def test_export_rejects_invalid_project():
     proj = minimal_project()

@@ -209,6 +209,24 @@ def _accumulate_stream(resp, cancel: Callable[[], bool] | None) -> ChatResult:
     )
 
 
+def _content_chars(content: Any) -> int:
+    """Longueur texte d'un contenu de message.
+
+    Un contenu peut être une chaîne (texte) ou une liste de parts (vision :
+    texte + image_url). Seules les parts texte comptent dans l'estimation ;
+    le base64 d'une image n'est pas du texte prompt.
+    """
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        return sum(
+            len(part.get("text", ""))
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return len(str(content or ""))
+
+
 def chat(
     messages: list[dict],
     *,
@@ -244,7 +262,7 @@ def chat(
         payload["response_format"] = {"type": "json_object"}
 
     started = time.perf_counter()
-    prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
+    prompt_chars = sum(_content_chars(m.get("content")) for m in messages)
     try:
         with httpx.Client(
             timeout=httpx.Timeout(timeout, connect=min(15.0, timeout)),

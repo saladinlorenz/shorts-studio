@@ -58,6 +58,9 @@ _DEFAULTS = {
     "llm_max_tool_calls": 3,  # appels d'outils de lecture par demande
     "llm_stream": True,  # streaming SSE (interrompable) si le serveur le peut
     "llm_json_mode": "auto",  # auto | on | off : sortie JSON demandee ou non
+    "llm_vision_review": False,  # passe de vision optionnelle sur les frames rendues
+    #                             # (off par defaut : envoie les images au fournisseur,
+    #                             #  1 appel borne, advisory — ne corrige rien toute seule)
     # --- Transcription des moments forts --------------------------------------
     # Cle DEDIEE : la cle Groq des Clips (groq_api_key) ne sert a la transcription
     # que sur demande explicite de l'utilisateur (api_key_source = "clips").
@@ -122,6 +125,7 @@ def llm_config() -> dict:
         "model": str(data.get(f"llm_{provider}_model") or "").strip(),
         "stream": bool(data.get("llm_stream", True)),
         "json_mode": str(data.get("llm_json_mode") or "auto").lower(),
+        "vision_review": bool(data.get("llm_vision_review", False)),
     }
     for key, (lo, default, hi) in _LLM_NUMBER_DEFAULTS.items():
         raw = data.get(key, default)
