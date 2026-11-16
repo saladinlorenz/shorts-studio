@@ -582,7 +582,9 @@ def _list_effects(args: dict) -> dict:
         "total": len(items),
         "note": "set_effects est la seule opération qui applique un effet. Forme : "
                 "{\"id\":\"…\",\"params\":{…}} ; sans « params », les réglages par défaut "
-                "du catalogue s'appliquent. Rien au-delà de cette liste n'existe dans le studio.",
+                "du catalogue s'appliquent. Toute la vidéo : scene_id:\"*\" (portée scène) ou "
+                "layer_role/layer_type (tous les calques d'un rôle/type). "
+                "Rien au-delà de cette liste n'existe dans le studio.",
     }
 
 

@@ -30,6 +30,14 @@ PROVIDER_LABELS = {
     "groq": "API Groq",
 }
 
+# Mémoire adaptative : les fournisseurs cloud ont une grande fenêtre. Un budget
+# serré (3000, calibré pour un petit modèle local) y fait sauter l'historique et
+# les documents : le modèle oublie l'effet déjà choisi et redemande. On garantit
+# donc un plancher généreux au cloud ; le local conserve le budget réglé. Une
+# valeur cloud explicitement plus haute reste honorée ; le repli KIND_CONTEXT
+# du service réduit encore si la fenêtre réelle du serveur est plus petite.
+CLOUD_CONTEXT_FLOOR = 20000
+
 # Valeurs par défaut : les seules clés conservées par load()/save() (liste
 # blanche). Tout nouveau réglage doit être déclaré ici pour être lisible.
 _DEFAULTS = {
@@ -37,14 +45,18 @@ _DEFAULTS = {
     "host": "127.0.0.1",
     "port": 8000,
     # --- Assistant IA --------------------------------------------------------
-    # Aucun port ni modele suppose : les champs sont laisses vides jusqu'a ce
-    # que l'utilisateur renseigne son serveur (ou sa cle).
-    "llm_enabled": False,
+    # Defaut local-first : le llama.cpp local est servi via le relais OpenAI de
+    # Local Chat (127.0.0.1:8080/api/agent/v1). Le port moteur 8900 est interne ;
+    # le relais applique la config de generation de l'app (thinking desactive),
+    # seul moyen d'obtenir des reponses exploitables par le studio. Modele
+    # « local » (un seul modele servi a la fois). Aucun cloud par defaut ;
+    # l'utilisateur change de fournisseur ou de modele dans Reglages.
+    "llm_enabled": True,
     "llm_provider": "local",
-    "llm_local_base_url": "",
+    "llm_local_base_url": "http://127.0.0.1:8080/api/agent/v1",
     "llm_local_api_key": "",
     "llm_local_pin": "",
-    "llm_local_model": "",
+    "llm_local_model": "local",
     "llm_gemini_api_key": "",
     "llm_gemini_model": "",
     "llm_groq_api_key": "",
@@ -137,6 +149,19 @@ def llm_config() -> dict:
         short = key.removeprefix("llm_")
         cfg[short] = int(value) if key in _LLM_INT_KEYS else round(value, 3)
     return cfg
+
+
+def effective_context_budget(cfg: dict, configured: int) -> int:
+    """Budget effectif : plancher cloud généreux, budget local conservé tel quel.
+
+    Le réglage ``context_budget`` reste la référence en local (petite fenêtre).
+    Au cloud, on ne descend jamais sous ``CLOUD_CONTEXT_FLOOR`` pour que
+    l'historique et les documents survivent ; une valeur réglée plus haute gagne.
+    """
+    configured = int(configured)
+    if cfg.get("provider") in CLOUD_BASE_URLS:
+        return max(configured, CLOUD_CONTEXT_FLOOR)
+    return configured
 
 
 def save_settings(data: dict) -> dict:

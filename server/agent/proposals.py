@@ -224,6 +224,110 @@ def _ids_hint(project: dict) -> str:
     return " | ".join(parts)
 
 
+# Ops ciblant scène/calque : acceptent un ciblage global (« * ») ou par rôle/type.
+_TARGET_OPS = {"set_scene", "set_layer", "set_effects"}
+MAX_OPERATIONS = 60
+
+
+def _expand_targets(base: dict, operations: list) -> list:
+    """Traduit un ciblage global en opérations concrètes, une par cible réelle.
+
+    « scene_id:"*" » = toutes les scènes ; « layer_id:"*" », « layer_role » ou
+    « layer_type » = les calques correspondants. La validation par cible reste
+    celle des ops concrètes : aucune règle de portée n'est contournée. Le ciblage
+    porte sur l'état soumis (les ops d'une même proposition ne se voient pas).
+    """
+    scenes = base.get("content", {}).get("scenes", [])
+    out: list = []
+    for op in operations:
+        if not isinstance(op, dict) or str(op.get("op", "")).strip() not in _TARGET_OPS:
+            out.append(op)
+            continue
+        name = str(op.get("op", "")).strip()
+        scene_sel = str(op.get("scene_id", "")).strip()
+        layer_sel = str(op.get("layer_id", "")).strip()
+        role = str(op.get("layer_role", "")).strip()
+        ltype = str(op.get("layer_type", "")).strip()
+        if not (scene_sel == "*" or layer_sel == "*" or role or ltype):
+            out.append(op)
+            continue
+        if scene_sel == "*":
+            target_scenes = list(scenes)
+        else:
+            scene = _find_scene(base, scene_sel)
+            if scene is None:
+                out.append(op)  # laisse le message « scène inconnue » habituel
+                continue
+            target_scenes = [scene]
+        if name == "set_layer" and not (layer_sel or role or ltype):
+            raise ProposalError([
+                "set_layer avec scene_id:\"*\" exige une cible calque : "
+                "layer_id, layer_role ou layer_type."
+            ])
+        for scene in target_scenes:
+            sid = str(scene.get("id"))
+            if name == "set_scene":
+                concrete = {k: v for k, v in op.items()
+                            if k not in {"layer_id", "layer_role", "layer_type"}}
+                concrete["scene_id"] = sid
+                out.append(concrete)
+                continue
+            layers = scene.get("layers", [])
+            if layer_sel and layer_sel != "*":
+                chosen = [l for l in layers if str(l.get("id")) == layer_sel]
+            elif layer_sel == "*" or role or ltype:
+                chosen = [l for l in layers
+                          if (not role or str(l.get("role", "")) == role)
+                          and (not ltype or str(l.get("type", "")) == ltype)]
+            else:
+                chosen = []
+            if chosen:
+                for layer in chosen:
+                    concrete = {k: v for k, v in op.items()
+                                if k not in {"layer_role", "layer_type"}}
+                    concrete["scene_id"] = sid
+                    concrete["layer_id"] = str(layer.get("id"))
+                    out.append(concrete)
+                continue
+            if name == "set_effects" and not (layer_sel or role or ltype):
+                concrete = {k: v for k, v in op.items()
+                            if k not in {"layer_id", "layer_role", "layer_type"}}
+                concrete["scene_id"] = sid
+                out.append(concrete)  # portée scène
+            elif layer_sel == "*" or role or ltype:
+                continue  # filtre sans correspondance dans cette scène : rien à faire
+            elif name == "set_effects" and scene_sel == "*":
+                continue  # layer_id concret absent de cette scène : on l'ignore
+            else:
+                concrete = dict(op)
+                concrete["scene_id"] = sid
+                out.append(concrete)  # laisse l'erreur « calque introuvable »
+    return out
+
+
+def _reorder(items: list, item_id: str, before: str, after: str, *, label: str) -> list:
+    """Réordonne par identifiant de référence (before/after), jamais par index.
+
+    Renvoie une nouvelle liste ; lève ValueError (message clair) si la cible ou
+    la référence manque, ou si before/after ne sont pas exactement un seul.
+    """
+    ids = [str(it.get("id")) for it in items]
+    if item_id not in ids:
+        raise ValueError(f"{label} {item_id!r} introuvable.")
+    if bool(before) == bool(after):
+        raise ValueError(f"{label} : exactement un parmi « before » ou « after » (id de référence).")
+    ref = before or after
+    if ref == item_id:
+        raise ValueError(f"{label} : la référence ne peut pas être l'élément déplacé.")
+    if ref not in ids:
+        raise ValueError(f"référence {ref!r} introuvable pour {label}.")
+    moved = next(it for it in items if str(it.get("id")) == item_id)
+    rest = [it for it in items if str(it.get("id")) != item_id]
+    ref_index = next(i for i, it in enumerate(rest) if str(it.get("id")) == ref)
+    rest.insert(ref_index if before else ref_index + 1, moved)
+    return rest
+
+
 def _audio_ready(project: dict) -> bool:
     """Une piste reelle est-elle mixee ? Les effets audio le disent vrai."""
     audio = project.get("audio") or {}
@@ -259,7 +363,14 @@ def apply_operations(base: dict, operations: list) -> tuple[dict, list[dict], li
     changes: list[dict] = []
     errors: list[str] = []
 
-    for index, op in enumerate(operations[:60]):
+    expanded = _expand_targets(base, operations[:MAX_OPERATIONS])
+    if len(expanded) > MAX_OPERATIONS:
+        raise ProposalError([
+            f"Ciblage global trop large : {len(expanded)} opérations après expansion "
+            f"(max {MAX_OPERATIONS}). Ciblez moins de scènes ou de calques à la fois."
+        ])
+
+    for index, op in enumerate(expanded):
         tag = f"operations[{index}]"
         if not isinstance(op, dict):
             errors.append(f"{tag} : objet attendu.")
@@ -487,6 +598,64 @@ def apply_operations(base: dict, operations: list) -> tuple[dict, list[dict], li
             changes.append({"op": name, "target": f"{scene_id}/{layer_id}", "before": layer_id, "after": None})
             continue
 
+        if name == "move_scene":
+            scene_id = str(op.get("scene_id", "")).strip()
+            before = str(op.get("before", "")).strip()
+            after = str(op.get("after", "")).strip()
+            scenes = project.get("content", {}).get("scenes", [])
+            try:
+                reordered = _reorder(scenes, scene_id, before, after, label="scène")
+            except ValueError as e:
+                errors.append(f"{tag} : {e} {_ids_hint(base)}")
+                continue
+            project["content"]["scenes"] = reordered
+            position = f"avant {before}" if before else f"après {after}"
+            changes.append({"op": name, "target": f"scene {scene_id}", "before": None, "after": position})
+            continue
+
+        if name == "move_layer":
+            scene_id = str(op.get("scene_id", "")).strip()
+            layer_id = str(op.get("layer_id", "")).strip()
+            before = str(op.get("before", "")).strip()
+            after = str(op.get("after", "")).strip()
+            scene = _find_scene(project, scene_id)
+            if scene is None:
+                errors.append(f"{tag} : scène {scene_id!r} inconnue. {_ids_hint(base)}")
+                continue
+            try:
+                reordered = _reorder(scene.get("layers", []), layer_id, before, after, label="calque")
+            except ValueError as e:
+                errors.append(f"{tag} : {e} {_ids_hint(base)}")
+                continue
+            scene["layers"] = reordered
+            position = f"avant {before}" if before else f"après {after}"
+            changes.append({"op": name, "target": f"{scene_id}/{layer_id}", "before": None, "after": position})
+            continue
+
+        if name == "duplicate_layer":
+            scene_id = str(op.get("scene_id", "")).strip()
+            layer_id = str(op.get("layer_id", "")).strip()
+            new_id = str(op.get("new_layer_id", "")).strip()
+            scene = _find_scene(project, scene_id)
+            if scene is None:
+                errors.append(f"{tag} : scène {scene_id!r} inconnue. {_ids_hint(base)}")
+                continue
+            source = _find_layer(project, scene_id, layer_id)
+            if source is None:
+                errors.append(f"{tag} : calque {layer_id!r} introuvable dans {scene_id!r}. {_ids_hint(base)}")
+                continue
+            if not new_id or any(str(l.get("id")) == new_id for l in scene.get("layers", [])):
+                errors.append(f"{tag} : new_layer_id requis et inédit ({new_id!r}).")
+                continue
+            clone = schema.clone(source)
+            clone["id"] = new_id
+            layers = scene.get("layers", [])
+            index = next(i for i, l in enumerate(layers) if str(l.get("id")) == layer_id)
+            layers.insert(index + 1, clone)
+            changes.append({"op": name, "target": f"{scene_id}/{new_id}", "before": None,
+                            "after": f"copie de {layer_id}"})
+            continue
+
         if name == "set_effects":
             scene_id = str(op.get("scene_id", "")).strip()
             scene = _find_scene(project, scene_id)
@@ -533,8 +702,8 @@ def apply_operations(base: dict, operations: list) -> tuple[dict, list[dict], li
         errors.append(
             f"{tag} : opération {name!r} inconnue. Ops valides : set_theme, set_export, "
             "set_variation, set_signature, set_audio, set_scene, set_layer, set_effects, "
-            "add_scene, add_text_layer, add_image_layer, duplicate_scene, remove_scene, "
-            "remove_layer."
+            "add_scene, add_text_layer, add_image_layer, duplicate_scene, duplicate_layer, "
+            "move_scene, move_layer, remove_scene, remove_layer."
         )
 
     if errors:

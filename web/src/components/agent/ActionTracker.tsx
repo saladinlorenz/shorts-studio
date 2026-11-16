@@ -211,6 +211,12 @@ export default function ActionTracker({ proposal, jobId, job, pollError, launchE
             : "Aucune proposition de correction validée fournie. Rien n'a été appliqué."}
         </p>
       )}
+      {proposal.action?.name === "project_critique" && job?.status === "done" && (
+        <p className="text-muted-foreground">
+          {reviewProposal(job.result) ? "Avis artistique consultatif : améliorations proposées, jamais appliquées automatiquement. Retenez-les via l'aperçu puis Appliquer."
+            : "Avis artistique consultatif : aucune amélioration applicable proposée. Rien n'a été appliqué."}
+        </p>
+      )}
       {frames.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
           {frames.map(({ frame, ref }, index) => (

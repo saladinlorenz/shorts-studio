@@ -286,7 +286,10 @@ export default function AgentPanel({
       const corrected: AgentRun = { ...actionRun, proposal: correction };
       setRun(corrected);
       pushTurn("assistant", correction.summary);
-      autoApply(corrected);
+      // Avis artistique : proposition consultative, jamais appliquée sans clic explicite.
+      if (actionRun.proposal.action?.name !== "project_critique") {
+        autoApply(corrected);
+      }
     }
     setActionJobId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps

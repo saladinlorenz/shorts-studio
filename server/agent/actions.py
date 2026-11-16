@@ -24,6 +24,10 @@ class ProjectReview(Params):
     prompt: Prompt = "Vérifie la lisibilité, le contraste et le cadrage ; corrige les défauts visibles."
 
 
+class ProjectCritique(Params):
+    prompt: Prompt = "Propose des améliorations artistiques (composition, rythme, couleur, typographie) sans rien appliquer."
+
+
 class ProjectExport(Params):
     name: Identifier
 
@@ -91,6 +95,7 @@ class ImageGenerate(Params):
 
 SCHEMAS = {
     "project_review": (ProjectReview, "Auditer et corriger le projet sans vision"),
+    "project_critique": (ProjectCritique, "Avis de réalisateur : améliorations artistiques proposées"),
     "project_export": (ProjectExport, "Exporter le projet en MP4"),
     "montage_render": (MontageRender, "Rendre un montage footage (EDL) en MP4"),
     "clips_download": (ClipsDownload, "Télécharger une vidéo YouTube"),
@@ -171,7 +176,7 @@ def describe(name: str, raw: dict, project: dict | None) -> dict:
     state: dict = {}
     impact = ["Seule cette action sera exécutée après confirmation ; aucune action suivante automatique."]
     try:
-        if name in {"project_review", "project_export"}:
+        if name in {"project_review", "project_critique", "project_export"}:
             if project is None:
                 raise ActionError("Ouvrez un projet dans Design avant cette action.")
             errors, _ = proposals.validate_candidate(project)
@@ -191,6 +196,12 @@ def describe(name: str, raw: dict, project: dict | None) -> dict:
             destination = f"{cfg.get('provider')} / {cfg.get('model')} ({cfg.get('base_url')})"
             impact.append(f"Projet JSON, mesures DOM et logs texte envoyés au LLM configuré : {destination}. Aucun envoi d’image ni besoin de vision. Quota/coût possible si cloud.")
             impact.append("Rendu local de 6 frames maximum par passe ; au plus 2 appels au modèle et 2 corrections JSON, puis recontrôle. Les images restent locales pour votre contrôle. Résultat proposé, jamais appliqué automatiquement.")
+        elif name == "project_critique":
+            cfg = settings.llm_config()
+            state["destination"] = {key: cfg.get(key) for key in ("provider", "model", "base_url")}
+            destination = f"{cfg.get('provider')} / {cfg.get('model')} ({cfg.get('base_url')})"
+            impact.append(f"Projet JSON et protocole texte envoyés au LLM configuré : {destination}. Aucun rendu, aucun envoi d’image. Quota/coût possible si cloud.")
+            impact.append("Un seul appel au modèle : avis artistique consultatif (composition, rythme, couleur, typographie). Les améliorations sont proposées comme opérations validées, jamais appliquées automatiquement : aperçu puis Appliquer après votre clic.")
         elif name == "project_export":
             impact.append("Rendu local potentiellement long. Création d’un MP4 ; aucun fichier existant ne sera remplacé.")
         elif name == "montage_render":
@@ -326,6 +337,18 @@ def start(action: dict, record: dict, cfg: dict) -> dict:
             if operations:
                 reply = {"type": "project_patch", "summary": result["summary"], "operations": operations,
                          "warnings": ["Vérification sur frames échantillonnées, pas sur l’ensemble du mouvement."]}
+                proposal = proposals.from_reply(reply, record["base_project"], record["proposal"]["project_name"])
+                service.store_followup(proposal, reply, record["base_project"])
+                result["proposal"] = proposals.public_view(proposal)
+            return result
+        if name == "project_critique":
+            from . import critique, proposals, service
+            result = critique.critique_project(job, record["base_project"], params["prompt"], cfg)
+            jobs.raise_if_cancelled(job)
+            operations = result.get("operations", [])
+            if operations:
+                reply = {"type": "project_patch", "summary": result["summary"], "operations": operations,
+                         "warnings": ["Avis artistique consultatif : appliquez seulement après votre clic, via l’aperçu puis Appliquer."]}
                 proposal = proposals.from_reply(reply, record["base_project"], record["proposal"]["project_name"])
                 service.store_followup(proposal, reply, record["base_project"])
                 result["proposal"] = proposals.public_view(proposal)

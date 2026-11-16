@@ -227,7 +227,7 @@ def run_request(job, payload: dict) -> dict:
             built[-1]["content"] += "\n\n" + _creation_hint(data)
         return built, ctx_meta
 
-    budget_tokens = int(cfg.get("context_budget", 3000))
+    budget_tokens = settings.effective_context_budget(cfg, int(cfg.get("context_budget", 3000)))
     messages, meta = build_messages(budget_tokens)
     context_shrunk = False
 
@@ -566,7 +566,7 @@ def execute_action(proposal_id: str, confirmation: str, project: dict | None) ->
             raise AgentUnavailable("Confirmation absente ou différente de celle affichée.")
         if proposal["status"] == "rejected" or proposal.get("execution_job_id"):
             raise AgentUnavailable("Action déjà lancée ou refusée : aucun double lancement.")
-        if action["name"] in {"project_review", "project_export"}:
+        if action["name"] in {"project_review", "project_critique", "project_export"}:
             if project is None:
                 raise AgentUnavailable("Projet actif absent : ouvrez le projet avant l’action.")
             revision = proposals.revision_of(project)
