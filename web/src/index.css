@@ -56,3 +56,50 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(215 16% 32%);
 }
+
+/* Banques de contenu : aurore du hero, entrée en scène des cartes, lueur
+   d'accent au survol. Chaque carte porte sa propre teinte (--src). */
+.sources-aurora {
+  background:
+    radial-gradient(42rem 16rem at 12% -20%, hsl(215 80% 55% / 0.22), transparent 60%),
+    radial-gradient(36rem 14rem at 85% 0%, hsl(170 70% 45% / 0.16), transparent 60%),
+    radial-gradient(30rem 12rem at 60% 120%, hsl(320 70% 55% / 0.12), transparent 60%);
+  animation: sources-drift 16s ease-in-out infinite alternate;
+}
+@keyframes sources-drift {
+  from {
+    transform: translate3d(-1.5%, 0, 0) scale(1.02);
+    opacity: 0.85;
+  }
+  to {
+    transform: translate3d(1.5%, 1%, 0) scale(1.06);
+    opacity: 1;
+  }
+}
+.sources-card {
+  animation: sources-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.sources-card:hover {
+  border-color: var(--src-line);
+  box-shadow: 0 10px 30px -18px var(--src);
+}
+.sources-result {
+  animation: sources-rise 0.25s ease-out backwards;
+}
+@keyframes sources-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sources-aurora,
+  .sources-card,
+  .sources-result {
+    animation: none;
+  }
+}

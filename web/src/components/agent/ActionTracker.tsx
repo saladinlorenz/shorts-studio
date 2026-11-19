@@ -217,6 +217,28 @@ export default function ActionTracker({ proposal, jobId, job, pollError, launchE
             : "Avis artistique consultatif : aucune amélioration applicable proposée. Rien n'a été appliqué."}
         </p>
       )}
+      {proposal.action?.name === "sources_test" && job?.status === "done" && (
+        <div className="space-y-1">
+          <Badge variant={result?.ok === true ? "success" : "destructive"} className="text-[10px]">
+            {result?.ok === true ? "Connexion valide" : "Connexion non valide"}
+          </Badge>
+          <p className="break-words">{readableText(String(result?.message ?? ""))} · {Number(result?.latency_ms) || 0} ms</p>
+          {typeof result?.sample === "string" && result.sample && (
+            <p className="break-words text-muted-foreground">Aperçu : « {readableText(result.sample, 160)} »</p>
+          )}
+        </div>
+      )}
+      {proposal.action?.name === "brand_apply" && job?.status === "done" && (
+        <p className="text-muted-foreground">
+          {reviewProposal(job.result) ? "Pack marque proposé en opérations validées : theme/signature/audio seulement, scènes et calques inchangés."
+            : "Aucune modification applicable fournie. Rien n'a été appliqué."}
+        </p>
+      )}
+      {proposal.action?.name === "brand_capture" && job?.status === "done" && record(result?.brand) && (
+        <p className="text-muted-foreground">
+          Pack « {readableText(String(record(result?.brand)?.label ?? ""), 80)} » enregistré : réutilisable sur un autre projet via brand_apply.
+        </p>
+      )}
       {frames.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
           {frames.map(({ frame, ref }, index) => (

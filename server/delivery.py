@@ -4,8 +4,9 @@ Le paquet est un ZIP pose dans ``batch/deliveries/``, a cote du manifeste deja e
 par la file. Trois regles commandent ce module :
 
 1. rien d'invente — les .srt viennent des fenetres reellement rendues
-   (``shortvideos.delivery``), le manifeste vient de ``queue.write_manifest`` et les
-   metadonnees du bloc ``publish`` du projet, recopie tel quel ;
+   (``shortvideos.delivery``), le manifeste vient de ``queue.write_manifest``, les
+   metadonnees du bloc ``publish`` du projet recopiees tel quel, et les credits
+   reprennent la provenance ecrite a l'import (licence absente ⇒ « inconnue ») ;
 2. rien de lourd dans le thread de requete — l'assemblage tourne dans un job, avec
    progression et annulation comme un lot ;
 3. un seul paquet a la fois par lot, ecriture en ``.part.zip`` puis remplacement
@@ -24,6 +25,7 @@ from fastapi import HTTPException
 
 from shortvideos import delivery as delivery_mod
 
+from . import media as media_mod
 from . import queue as queue_mod
 from .jobs import Job, raise_if_cancelled
 from .security import DELIVERIES_DIR, assert_local_dir, safe_name
@@ -131,6 +133,59 @@ def status(batch_id: str) -> dict:
     }
 
 
+def _media_refs(node) -> list[str]:
+    """Références ``media://`` employées n'importe où dans un projet, sans doublon."""
+    refs: list[str] = []
+    seen: set[str] = set()
+
+    def walk(value):
+        if isinstance(value, dict):
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+        elif isinstance(value, str) and value.startswith("media://"):
+            if value not in seen:
+                seen.add(value)
+                refs.append(value)
+
+    walk(node)
+    return refs
+
+
+def _credits_text(project: dict) -> str:
+    """Crédits d'une ligne : source, auteur et licence de chaque média employé.
+
+    Une licence absente s'affiche « inconnue » : le paquet n'en invente
+    jamais. Un projet sans média ne produit aucun fichier — la pièce est
+    facultative, elle avertit mais ne fait jamais échouer le paquet.
+    """
+    lines: list[str] = []
+    for ref in _media_refs(project):
+        media_id = ref.removeprefix("media://")
+        prov = media_mod.provenance_of(media_id)
+        name = str(prov.get("item_title") or prov.get("filename") or media_id)
+        source = str(prov.get("source") or "inconnue")
+        licence = str(prov.get("licence") or "inconnue")
+        author = str(prov.get("author") or "")
+        page = str(prov.get("page") or "")
+        line = f"- {name} — source : {source}"
+        if author:
+            line += f" — auteur : {author}"
+        line += f" — licence : {licence}"
+        if page:
+            line += f" — {page}"
+        lines.append(line)
+    if not lines:
+        return ""
+    return (
+        "Médias employés dans cette vidéo (source, auteur, licence) :\r\n"
+        + "\r\n".join(lines)
+        + "\r\n"
+    )
+
+
 def _notice(batch: dict, counts: dict, warnings: list[str]) -> str:
     lines = [
         f"Lot : {batch['name']}  (identifiant {batch['id']})",
@@ -140,6 +195,7 @@ def _notice(batch: dict, counts: dict, warnings: list[str]) -> str:
         f"sous-titres : {counts['subtitles']} fichier(s) .srt dans subtitles/",
         f"miniatures  : {counts['thumbnails']} fichier(s) .png dans thumbnails/",
         f"métadonnées : {counts['metadata']} fichier(s) .json dans metadata/ (titre, description, hashtags saisis dans le projet)",
+        f"crédits     : {counts['credits']} fichier(s) .txt dans credits/ (source et licence de chaque média employé)",
         "manifeste   : manifeste.json et manifeste.csv (mêmes colonnes que la page Production)",
         "",
         "Les sous-titres reprennent les fenêtres d'animation réellement rendues :",
@@ -180,7 +236,7 @@ def build_package(batch_id: str, job: Job | None = None) -> dict:
             tmp_zip.unlink()
 
         warnings: list[str] = []
-        counts = {"videos": 0, "subtitles": 0, "thumbnails": 0, "metadata": 0}
+        counts = {"videos": 0, "subtitles": 0, "thumbnails": 0, "metadata": 0, "credits": 0}
         manifests: list[Path] = []
         for fmt in ("json", "csv"):
             try:
@@ -227,6 +283,13 @@ def build_package(batch_id: str, job: Job | None = None) -> dict:
                         json.dumps(marketing, ensure_ascii=False, indent=2).encode("utf-8"),
                     )
                     counts["metadata"] += 1
+
+                # Credits : une piece par ligne rendue, source et licence de
+                # chaque media reellement employe. Facultative par conception.
+                credits = _credits_text(item.get("project") or {})
+                if credits:
+                    archive.writestr(f"credits/{stem}.txt", credits.encode("utf-8"))
+                    counts["credits"] += 1
 
             for path in manifests:
                 if path.is_file():

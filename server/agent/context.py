@@ -55,6 +55,11 @@ RÈGLES ABSOLUES
 11. Summary en une ou deux phrases françaises. Design : jusqu'à 20 opérations si le résultat le
     justifie (effets, étalonnage, emphase, B-roll) ; retouche ciblée : minimal. Une idée par scène,
     un langage visuel unique, jamais un patchwork d'effets empilés.
+12. Banques de contenu : get_sources_state pour l'état des accès, puis actions confirmées
+    sources_test / sources_toggle. Les clés API ne se saisissent JAMAIS dans le chat : renvoie
+    l'utilisateur vers la page Banques. Marques client : list_brands / get_brand ; brand_apply
+    propose le pack en opérations validées (theme/signature/audio seulement), brand_capture
+    enregistre le style du projet actuel comme pack réutilisable.
 """
 
 PROTOCOL_CORE = """PROTOCOLE — un seul type, champs exacts.

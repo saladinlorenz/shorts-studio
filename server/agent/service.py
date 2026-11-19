@@ -566,7 +566,7 @@ def execute_action(proposal_id: str, confirmation: str, project: dict | None) ->
             raise AgentUnavailable("Confirmation absente ou différente de celle affichée.")
         if proposal["status"] == "rejected" or proposal.get("execution_job_id"):
             raise AgentUnavailable("Action déjà lancée ou refusée : aucun double lancement.")
-        if action["name"] in {"project_review", "project_critique", "project_export"}:
+        if action["name"] in {"project_review", "project_critique", "project_export", "brand_apply", "brand_capture"}:
             if project is None:
                 raise AgentUnavailable("Projet actif absent : ouvrez le projet avant l’action.")
             revision = proposals.revision_of(project)

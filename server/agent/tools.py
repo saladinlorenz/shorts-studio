@@ -11,6 +11,8 @@ pas d'installation, pas de suppression.
 """
 from __future__ import annotations
 
+from fastapi import HTTPException
+
 from shortvideos import batch as batch_mod
 from shortvideos import effects as effects_mod
 from shortvideos import fonts as fonts_mod
@@ -62,6 +64,11 @@ READ_TOOLS = (
     # clips & podcast
     "get_clips_sessions",
     "get_podcast_stats",
+    # banques de contenu & marques
+    "get_sources_state",
+    "search_stock",
+    "list_brands",
+    "get_brand",
 )
 
 PROPOSE_TOOLS = (
@@ -107,6 +114,14 @@ Le serveur renverra toutes les observations dans un seul message ; n'écris rien
   compute_batch_plan {"model":"…","csv_id":"…","mapping":{},"options":{}} ·
   get_batch_status {"batch_id":"…"} · get_queue_status {}
 - clips / podcast : get_clips_sessions {} · get_podcast_stats {}
+- banques de contenu : get_sources_state {} (état public des accès : clés configurées oui/non,
+  jamais les clés). Test et activation = studio_action sources_test / sources_toggle après clic.
+  Recherche réelle : search_stock {"query":"…","kind":"video|photo|audio|music","limit":8} —
+  les résultats portent une ref opaque ; l'import dans la médiathèque = studio_action
+  stock_import {"ref":"…"} après clic utilisateur (téléchargement, licence et provenance déclarées).
+  Les clés se saisissent UNIQUEMENT sur la page Banques : ne demande jamais une clé dans le chat.
+- marques : list_brands {} · get_brand {"id":"…"} ; appliquer un pack au projet = studio_action
+  brand_apply (proposition validée), capturer le style du projet = studio_action brand_capture.
 Aucun autre nom d'outil n'existe : pas de shell, pas de chemin disque, pas de
 suppression, pas d'installation, aucun rendu lancé par l'assistant."""
 
@@ -473,6 +488,57 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
             "speakers": (data.get("speakers") or [])[:40],
             "legacy": data.get("legacy"),
         }
+
+    if name == "get_sources_state":
+        from .. import sources as sources_mod
+
+        data = sources_mod.list_sources()
+        return {
+            "providers": [
+                {k: p[k] for k in ("id", "label", "kinds", "key_required", "key_configured", "key_hint", "enabled", "ready")}
+                for p in data["providers"]
+            ],
+            "configured": data["configured"],
+            "ready": data["ready"],
+            "note": "État public uniquement : les clés ne sortent jamais du serveur. Saisie des clés "
+                    "sur la page Banques par l'utilisateur, jamais dans le chat. Test et activation "
+                    "via studio_action sources_test / sources_toggle après clic.",
+        }
+
+    if name == "search_stock":
+        from .. import stock as stock_mod
+
+        query = _str_arg(args, "query")
+        if not query:
+            raise ToolError("search_stock exige « query » (le mot-clé à chercher).")
+        kind = _str_arg(args, "kind", "video") or "video"
+        source = _str_arg(args, "source")
+        limit = _int_arg(args, "limit", 8, 1, 20)
+        try:
+            return stock_mod.search(query, kind=kind, source=source, limit=limit)
+        except stock_mod.StockError as exc:
+            raise ToolError(str(exc)) from None
+
+    if name == "list_brands":
+        from .. import brands as brands_mod
+
+        return {
+            "brands": brands_mod.list_brands(),
+            "note": "Appliquer un pack au projet actif = studio_action brand_apply ; capturer le "
+                    "style du projet = studio_action brand_capture.",
+        }
+
+    if name == "get_brand":
+        from .. import brands as brands_mod
+
+        brand_id = _str_arg(args, "id")
+        if not brand_id:
+            raise ToolError("get_brand exige « id » (identifiant du pack).")
+        try:
+            pack = brands_mod.get_pack(brand_id)
+        except HTTPException as e:
+            raise ToolError(str(e.detail)) from e
+        return {"id": brand_id, "pack": pack}
 
     if name == "get_batch_fields":
         template_id = _str_arg(args, "model") or _str_arg(args, "id")

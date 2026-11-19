@@ -4,6 +4,7 @@ import {
   Film,
   FolderOpen,
   Gauge,
+  Globe,
   Layers,
   Library,
   MessageSquare,
@@ -106,6 +107,13 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "sources",
     label: "Sources",
     items: [
+      {
+        to: "/sources",
+        label: "Banques",
+        icon: Globe,
+        description:
+          "Clés API des banques de contenu : Pexels, NASA, Pixabay, Unsplash, Freesound, Jamendo, Internet Archive",
+      },
       {
         to: "/clips",
         label: "Clips",

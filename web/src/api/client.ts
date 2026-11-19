@@ -797,6 +797,36 @@ export interface MomentGenerateResult {
   warnings: string[];
 }
 
+/** Banques de contenu : le navigateur ne voit jamais la clé, seulement son indice. */
+export interface ContentSource {
+  id: string;
+  label: string;
+  tagline: string;
+  kinds: string[];
+  key_required: boolean;
+  key_label: string;
+  signup_url: string;
+  docs_url: string;
+  key_configured: boolean;
+  key_hint: string;
+  enabled: boolean;
+  ready: boolean;
+}
+
+export interface SourcesPublic {
+  providers: ContentSource[];
+  configured: number;
+  ready: number;
+  note: string;
+}
+
+export interface SourceTestResult {
+  ok: boolean;
+  message: string;
+  latency_ms: number;
+  sample?: string;
+}
+
 export const api = {
   health: () => request<{ status: string; groq_configured: boolean; web_dist: boolean }>("/api/health"),
 
@@ -1003,6 +1033,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  // Banques de contenu (clés API, écriture seule)
+  getSources: () => request<SourcesPublic>("/api/sources"),
+  setSource: (id: string, payload: { key?: string; enabled?: boolean; clear_key?: boolean }) =>
+    request<{ provider: ContentSource }>(`/api/sources/${encodeURIComponent(id)}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  testSource: (id: string) =>
+    request<SourceTestResult>(`/api/sources/${encodeURIComponent(id)}/test`, { method: "POST" }),
 
   // Assistant IA (orchestration côté serveur, aucune exécution automatique)
   agentStatus: () => request<AgentStatus>("/api/agent/status"),

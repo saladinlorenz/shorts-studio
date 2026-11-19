@@ -93,6 +93,27 @@ class ImageGenerate(Params):
     seed: int | None = Field(default=None, ge=0, le=2147483647)
 
 
+class SourceTarget(Params):
+    source_id: Identifier
+
+
+class SourceToggle(SourceTarget):
+    enabled: bool
+
+
+class StockImport(Params):
+    ref: Annotated[str, StringConstraints(min_length=3, max_length=120, pattern=r"^[A-Za-z0-9:_-]+$")]
+
+
+class BrandTarget(Params):
+    brand_id: Identifier
+
+
+class BrandCapture(Params):
+    label: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    notes: Annotated[str, StringConstraints(max_length=500)] = ""
+
+
 SCHEMAS = {
     "project_review": (ProjectReview, "Auditer et corriger le projet sans vision"),
     "project_critique": (ProjectCritique, "Avis de réalisateur : améliorations artistiques proposées"),
@@ -111,6 +132,11 @@ SCHEMAS = {
     "moments_analyze": (MomentsAnalyze, "Transcrire et détecter les moments forts"),
     "moments_generate": (MomentsGenerate, "Créer un projet depuis un moment fort"),
     "settings_update": (SettingsUpdate, "Modifier les paramètres non secrets de l’assistant"),
+    "sources_test": (SourceTarget, "Tester la connexion d’une banque de contenu"),
+    "sources_toggle": (SourceToggle, "Activer ou mettre en pause une banque de contenu"),
+    "stock_import": (StockImport, "Importer un média d’une banque dans la médiathèque"),
+    "brand_apply": (BrandTarget, "Appliquer un pack marque au projet (proposition validée)"),
+    "brand_capture": (BrandCapture, "Capturer le style du projet en pack marque"),
 }
 
 
@@ -160,6 +186,34 @@ def _media_state(ref: str) -> dict:
     return {"ref": ref, "size": stat.st_size, "modified": stat.st_mtime_ns}
 
 
+def _brand_operations(base: dict, patched: dict, pack: dict) -> list[dict]:
+    """Diff borné aux trois sections qu'un pack peut écrire, en opérations validées.
+
+    La signature porte une clé imbriquée « position » : l'éditeur attend
+    position.x / position.y, le diff les aplatis donc.
+    """
+    def region(node: dict, path: tuple) -> dict:
+        for step in path:
+            node = (node or {}).get(step) or {}
+        return node
+
+    ops: list[dict] = []
+    for op, path, provided in (
+        ("set_theme", ("theme",), pack.get("theme") or {}),
+        ("set_signature", ("content", "signature"), pack.get("signature") or {}),
+        ("set_audio", ("audio",), pack.get("audio") or {}),
+    ):
+        before, after = region(base, path), region(patched, path)
+        for key in provided:
+            if key == "position" and isinstance(after.get(key), dict):
+                for sub in ("x", "y"):
+                    if sub in after[key] and (before.get(key) or {}).get(sub) != after[key][sub]:
+                        ops.append({"op": op, "path": f"position.{sub}", "value": after[key][sub]})
+            elif key in after and before.get(key) != after[key]:
+                ops.append({"op": op, "path": key, "value": after[key]})
+    return ops
+
+
 def describe(name: str, raw: dict, project: dict | None) -> dict:
     from . import proposals
 
@@ -176,7 +230,7 @@ def describe(name: str, raw: dict, project: dict | None) -> dict:
     state: dict = {}
     impact = ["Seule cette action sera exécutée après confirmation ; aucune action suivante automatique."]
     try:
-        if name in {"project_review", "project_critique", "project_export"}:
+        if name in {"project_review", "project_critique", "project_export", "brand_apply", "brand_capture"}:
             if project is None:
                 raise ActionError("Ouvrez un projet dans Design avant cette action.")
             errors, _ = proposals.validate_candidate(project)
@@ -277,6 +331,59 @@ def describe(name: str, raw: dict, project: dict | None) -> dict:
             impact.append("Téléchargement d’un JPEG depuis image.pollinations.ai (service externe gratuit, sans clé).")
             impact.append("Le descriptif (prompt texte) est envoyé à ce service tiers ; l’image revient en local comme média.")
             impact.append("Aucune écriture dans le projet : l’affectation au fond ou au calque image reste une proposition séparée.")
+        elif name in {"sources_test", "sources_toggle"}:
+            from .. import sources as sources_mod
+            state["source"] = {k: sources_mod.state_of(params["source_id"])[k] for k in ("key_configured", "enabled")}
+            if name == "sources_test":
+                if not state["source"]["key_configured"]:
+                    spec = next(s for s in sources_mod.CATALOG if s["id"] == params["source_id"])
+                    if spec["key_required"]:
+                        raise ActionError(
+                            f"Aucune clé enregistrée pour {spec['label']} : l'utilisateur doit la saisir sur la page Banques, jamais dans le chat."
+                        )
+                impact.append("Appel réseau réel vers l’API officielle du fournisseur, avec la clé enregistrée côté serveur. La clé n’est ni affichée ni envoyée au modèle.")
+                impact.append("Vérification d’accès uniquement : aucun contenu téléchargé, aucune écriture dans le projet.")
+            else:
+                impact.append("Active ou met en pause la source pour la récupération future. Aucune clé modifiée, aucun contenu téléchargé.")
+        elif name == "stock_import":
+            from .. import stock as stock_mod
+            item = stock_mod.describe_ref(params["ref"])
+            state["source"] = item["provider_id"]
+            state["item"] = _fingerprint({k: item[k] for k in ("id", "kind", "title", "license", "page")})
+            impact.append(
+                f"Téléchargement réel depuis {item['provider']} (« {item['title']} ») vers la "
+                "médiathèque locale : provenance et licence déclarées écrites à côté du fichier. "
+                "Aucune écriture dans le projet, aucun fichier supprimé."
+            )
+            impact.append(
+                f"Licence déclarée par le fournisseur : {item['license']}. Vérifiez vos droits "
+                "avant publication ; une licence absente s’affiche « inconnue »."
+            )
+            impact.append(
+                "Déduplication sha256 : un fichier identique déjà importé est réutilisé, "
+                "jamais réécrit. La clé de la banque n’est ni affichée ni envoyée au modèle."
+            )
+        elif name == "brand_apply":
+            from .. import brands as brands_mod
+            pack = brands_mod.get_pack(params["brand_id"])
+            applied = brands_mod.apply_to_project(params["brand_id"], project)
+            errors, _ = proposals.validate_candidate(applied["project"])
+            if errors:
+                raise ActionError("Pack incompatible avec le projet : " + "; ".join(errors[:4]))
+            errors, _ = media.validate_project_refs(applied["project"])
+            if errors:
+                raise ActionError("Médias du pack absents du studio : " + "; ".join(errors[:4]))
+            operations = _brand_operations(project, applied["project"], pack)
+            if not operations:
+                raise ActionError("Ce pack ne change rien au projet actuel : rien à proposer.")
+            state["brand"] = _fingerprint(pack)
+            state["operations"] = _fingerprint(operations)
+            impact.append(f"Pack « {pack.get('label') or params['brand_id']} » : {len(operations)} changement(s) limités à theme/signature/audio ; scènes et calques inchangés.")
+            impact.append("Résultat proposé comme opérations validées : appliqué dans Design après votre clic de confirmation, ou via l’aperçu puis Appliquer.")
+            impact.extend(f"Avertissement : {warning}" for warning in applied["warnings"][:4])
+        elif name == "brand_capture":
+            impact.append("Crée un pack JSON dans brands/ à partir du theme/signature/audio du projet actuel ; le projet n’est pas modifié.")
+            impact.append("Le pack devient réutilisable sur d’autres projets via brand_apply ; aucun média ni secret n’y est copié hors références media://.")
     except HTTPException as exc:
         raise ActionError(str(exc.detail)) from None
     except (OSError, KeyError, ValueError) as exc:
@@ -353,6 +460,52 @@ def start(action: dict, record: dict, cfg: dict) -> dict:
                 service.store_followup(proposal, reply, record["base_project"])
                 result["proposal"] = proposals.public_view(proposal)
             return result
+        if name == "sources_test":
+            from .. import sources as sources_mod
+            result = sources_mod.test_connection(params["source_id"])
+            result["summary"] = result["message"]
+            return result
+        if name == "sources_toggle":
+            from .. import sources as sources_mod
+            provider = sources_mod.save(params["source_id"], enabled=params["enabled"])
+            return {
+                "summary": f"{provider['label']} : {'active' if provider['enabled'] else 'en pause'} pour la récupération.",
+                "provider": provider,
+            }
+        if name == "stock_import":
+            from .. import stock as stock_mod
+            return stock_mod.import_item(params["ref"], cancel=lambda: jobs.raise_if_cancelled(job))
+        if name == "brand_capture":
+            from .. import brands as brands_mod
+            try:
+                captured = brands_mod.capture_from_project(record["base_project"], params["label"], params["notes"])
+            except HTTPException as exc:
+                raise ActionError(str(exc.detail)) from None
+            brand = captured["brand"]
+            return {
+                "summary": f"Pack marque « {brand['label']} » enregistré ({brand['file']}).",
+                "brand": brand,
+                "warnings": captured.get("warnings", []),
+            }
+        if name == "brand_apply":
+            from .. import brands as brands_mod
+            from . import proposals, service
+            try:
+                applied = brands_mod.apply_to_project(params["brand_id"], record["base_project"])
+                pack = brands_mod.get_pack(params["brand_id"])
+            except HTTPException as exc:
+                raise ActionError(str(exc.detail)) from None
+            jobs.raise_if_cancelled(job)
+            operations = _brand_operations(record["base_project"], applied["project"], pack)
+            reply = {
+                "type": "project_patch",
+                "summary": f"Pack marque « {pack.get('label') or params['brand_id']} » : {len(operations)} changement(s) theme/signature/audio.",
+                "operations": operations,
+                "warnings": applied["warnings"],
+            }
+            proposal = proposals.from_reply(reply, record["base_project"], record["proposal"]["project_name"])
+            service.store_followup(proposal, reply, record["base_project"])
+            return {"summary": reply["summary"], "warnings": applied["warnings"], "proposal": proposals.public_view(proposal)}
         raise ActionError("Action non implémentée.")
 
     job = jobs.create_job("agent-action", work)

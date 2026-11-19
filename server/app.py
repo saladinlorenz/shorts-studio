@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from . import queue as batch_queue, security, settings
-from .api import agent, batch, brands, clips, delivery, exports, folders, jobs, library, media_routes, moments as moments_api, montage, podcast, projects, settings as settings_api, skills, studio, tts
+from .api import agent, batch, brands, clips, delivery, exports, folders, jobs, library, media_routes, moments as moments_api, montage, podcast, projects, settings as settings_api, skills, sources as sources_api, studio, tts
 
 WEB_DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
 
@@ -65,6 +65,7 @@ app.include_router(agent.router)
 app.include_router(clips.router)
 app.include_router(podcast.router)
 app.include_router(tts.router)
+app.include_router(sources_api.router)
 
 
 def _index_response() -> FileResponse | JSONResponse:

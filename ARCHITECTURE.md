@@ -65,23 +65,27 @@ Cinq axes, plus un héritage :
 | **ASSISTANT IA** | « dis-moi ce que tu veux, je prépare le projet ou le mapping » — tiroir **global** présent sur toutes les pages, ouvert par défaut depuis le cockpit | [`AssistantDock.tsx`](file:///E:/youtube/youtube_clipper/web/src/components/AssistantDock.tsx#L1), `Ctrl+I` | LLM local / Gemini / Groq |
 | **Héritage** | outils antérieurs conservés et branchés sur le web | `/clips`, `/podcast`, `/short-videos`, `/projects` | yt-dlp + Groq + FFmpeg, chaîne Pillow v1 |
 
-### 1.2 La navigation : quatre groupes, onze pages, un assistant
+### 1.2 La navigation : cinq groupes, quinze pages, un assistant
 
-La barre latérale n'est plus une liste plate de huit entrées : elle est **regroupée par
-intention** (Pilotage · Automatisation · Sources · Système) dans une seule source de vérité,
-[`web/src/lib/navigation.ts`](file:///E:/youtube/youtube_clipper/web/src/lib/navigation.ts#L33-L112),
+La barre latérale n'est plus une liste plate : elle est **regroupée par
+intention** (Pilotage · Création · Automatisation · Sources · Système) dans une seule source de vérité,
+[`web/src/lib/navigation.ts`](file:///E:/youtube/youtube_clipper/web/src/lib/navigation.ts#L39-L162),
 lue à la fois par le [`Sidebar`](file:///E:/youtube/youtube_clipper/web/src/App.tsx#L27) et par la
 palette de commandes — donc **aucun lien n'existe dans l'une sans l'autre**. Chaque entrée porte
 une `description` réelle (aide-titre dans la barre latérale, ligne descriptive dans la palette) :
-`/` et toute URL inconnue (`path="*"`) mènent au **Cockpit**, plus à Design.
+`/` et toute URL inconnue (`path="*"`) mènent au **Studio** (conversation + aperçu), plus à Design.
 
 | Page | URL | Groupe | Rôle en une phrase | Ce qu'elle écrit sur disque |
 | --- | --- | --- | --- | --- |
-| **Cockpit** | `/` | Pilotage | point d'entrée : champ de demande à l'assistant, exemples, catalogue d'effets, file de production, derniers projets, modèles, points de contrôle ; **configuration guidée** de l'assistant tant qu'il n'est pas prêt | `server/settings.json` via le parcours d'activation (uniquement au clic « Activer l'assistant ») ; sinon rien — les cartes sont lectrices |
+| **Studio** | `/` | Pilotage | accueil conversationnel : demande à l'assistant + aperçu vidéo, modifications appliquées en direct | `projects/<nom>.json` via l'assistant (après clic) |
 | **Design** | `/design` | Pilotage | éditer un projet v2 (scènes, calques, **effets**), lui appliquer un **pack de marque** et l'exporter en MP4 ; l'assistant est le tiroir droit | `projects/<nom>.json`, `models/<id>.json`, `brands/<id>.json`, `media/<uuid>`, `exports/<nom>.mp4` |
+| **Cockpit** | `/cockpit` | Pilotage | tableau de bord : assistant, files en cours, derniers projets, modèles, points de contrôle ; **configuration guidée** tant que l'assistant n'est pas prêt | `server/settings.json` via le parcours d'activation (uniquement au clic « Activer l'assistant ») ; sinon rien — les cartes sont lectrices |
+| **Voix off** | `/tts` | Création | synthèse vocale locale : texte → WAV, catalogue multilingue Piper et Kokoro | `media/<uuid>` (WAV), modèles voix téléchargés **au clic** |
+| **Montage** | `/montage` | Création | montage footage : plans, transitions, musique, étalonnage, rendu FFmpeg d'un EDL | `exports/<nom>.mp4` |
 | **Production** | `/production` | Automatisation | fabriquer un lot : modèle + CSV + dossiers de médias → plan → file → manifeste | `batch/*`, `exports/*.mp4`, `media/<uuid>` |
 | **Livraison** | `/delivery` | Automatisation | assembler et télécharger le paquet ZIP d'un lot (vidéos + `.srt` + miniatures + métadonnées + manifeste) | `batch/deliveries/<id>-<nom>.zip` |
 | **Bibliothèque** | `/library` | Automatisation | lister les modèles réutilisables, en créer depuis Design, en retirer, en déposer à la main | `models/*.json` |
+| **Banques** | `/sources` | Sources | clés API des banques de contenu (Pexels, Pixabay, Unsplash, NASA, Freesound, Jamendo, Internet Archive) : saisie, test réel, activation — **les clés ne quittent jamais le serveur** | `server/sources.json` |
 | **Clips** | `/clips` | Sources | télécharger une vidéo YouTube, faire découper sa transcription par Groq, extraire les clips en FFmpeg | `clips/<sid>/…` |
 | **Moments forts** | `/moments` | Sources | transcrire une source **déjà importée** (Whisper), scorer des fenêtres et expliquer chaque score, puis **au clic** générer un projet v2 sous-titré, marqué, avec miniature et métadonnées | `moments/<id>.json` + `moments/work/`, puis au clic `projects/<nom>.json` + `.srt`, `media/<uuid>` |
 | **Podcast** | `/podcast` | Sources | constituer une base de phrases découpées, puis assembler une vidéo qui énonce un texte | `podcast_db/…` |
@@ -94,7 +98,7 @@ d'importe où, sauf avec `Alt`) :
 
 | Raccourci | Effet réel |
 | --- | --- |
-| `Ctrl+K` | **palette de commandes** ([`CommandPalette.tsx`](file:///E:/youtube/youtube_clipper/web/src/components/CommandPalette.tsx#L1), 211 l.) : filtre les 11 pages (nom + description), l'action « Ouvrir l'assistant », les projets enregistrés (« Ouvrir le projet « … » ») et les modèles (« Nouveau projet depuis « … » ») ; flèches + `Entrée` pour choisir, `Échap` pour fermer |
+| `Ctrl+K` | **palette de commandes** ([`CommandPalette.tsx`](file:///E:/youtube/youtube_clipper/web/src/components/CommandPalette.tsx#L1), 211 l.) : filtre les 15 pages (nom + description), l'action « Ouvrir l'assistant », les projets enregistrés (« Ouvrir le projet « … » ») et les modèles (« Nouveau projet depuis « … » ») ; flèches + `Entrée` pour choisir, `Échap` pour fermer |
 | `Ctrl+I` | ouvre / ferme le **tiroir assistant** — la conversation est montée dans `App`, donc elle survit aux changements de page |
 | `Ctrl+/` | retour au cockpit (`/`) |
 | `Échap` | ferme le tiroir (et les dialogues, comme avant) |
@@ -388,12 +392,12 @@ youtube_clipper\
 ├── server\  shortvideos\  web\  tests\  tools\
 ```
 
-### 4.3 `server/` — backend FastAPI (3 673 lignes hors `agent/` et `__init__.py`)
+### 4.3 `server/` — backend FastAPI (4 667 lignes hors `agent/` et `__init__.py`)
 
 | Fichier | Lig. | Ce qu'il contient | Qui l'appelle / ce qu'il écrit |
 | --- | --- | --- | --- |
-| `app.py` | 170 | `FastAPI()`, inclusion des 16 routeurs sous `/api/*`, middleware `check_origin`, `GET /api/health`, montage statique de `web/dist` + `/media-cache/` + `/fonts/`, appel de `queue.recover()` au démarrage, `main()` + `--open` (fil qui attend la santé avant d'ouvrir le navigateur) | `python -m server.app [--open]` (uvicorn) ; écrit `queue.sqlite3` via recover |
-| `security.py` | 140 | `ALLOWED_DIRS` (**12 racines** autorisées, dont `brands/`, `moments/` et `batch/deliveries/`), `assert_local_dir()`, `safe_name()`, `check_origin()`, `DEFAULT_ORIGINS` | toutes les routes qui touchent le disque ; **aucune écriture** |
+| `app.py` | 280 | `FastAPI()`, inclusion des 19 routeurs sous `/api/*`, middleware `check_origin`, `GET /api/health`, montage statique de `web/dist` + `/media-cache/` + `/fonts/`, appel de `queue.recover()` au démarrage, `main()` + `--open` (fil qui attend la santé avant d'ouvrir le navigateur) | `python -m server.app [--open]` (uvicorn) ; écrit `queue.sqlite3` via recover |
+| `security.py` | 149 | `ALLOWED_DIRS` (**14 racines** autorisées, dont `brands/`, `moments/`, `skills/montage/`, `tts_models/` et `batch/deliveries/`), `assert_local_dir()`, `safe_name()`, `check_origin()`, `DEFAULT_ORIGINS` | toutes les routes qui touchent le disque ; **aucune écriture** |
 | `settings.py` | 150 | chargement/sauvegarde de `server/settings.json`, liste blanche de clés plates, `PROVIDERS`, `CLOUD_BASE_URLS`, `PROVIDER_LABELS`, bornes `(min, défaut, max)` des paramètres LLM, et les 4 clés `asr_*` (fournisseur, clé Groq dédiée, modèle Whisper, langue) | `server/api/settings.py`, `server/agent/*`, `server/moments.py`, `app.py` ; **écrit** `server/settings.json` |
 | `jobs.py` | 145 | registre en mémoire des tâches longues : `Job` (progression, message, résultat, erreur, `cancel_event`, `result_process`), `create/get/list_jobs(limit=20)`, TTL 1 h | `api/exports`, `api/clips`, `api/podcast`, `api/agent`, `queue.py` ; rien sur disque |
 | `render.py` | 177 | **entrée de rendu unique** `render_project_to_mp4(job, project, out_path)` : resolve → mediacache → `npx remotion render` → parse « Rendu 340/405 » → `.part.mp4` → remplacement atomique → `probe_mp4` | `api/exports.py` (export unitaire) et `queue.py` (worker) ; écrit `exports/*.mp4` |
@@ -403,16 +407,17 @@ youtube_clipper\
 | `folders.py` | 310 | dossiers connectés : enregistrement d'un chemin absolu (racine de lecteur refusée), types `video\|audio\|image\|tout`, scan avec déduplication par empreinte, inventaire par type | `api/folders.py`, `batch.py`, `agent/tools.py` ; écrit `batch/folders.json` + importe dans `media/` |
 | `queue.py` | 580 | file SQLite WAL : schéma `batches`/`items`, `start_batch`, worker thread, progression, `cancel`, `retry_failed`, `recover`, `list_batches`, `get_batch(items=)`, `write_manifest` | `api/batch.py` ; écrit `batch/queue.sqlite3`, `exports/*.mp4`, `batch/manifests/*` |
 | `library.py` | 211 | modèles de la bibliothèque : lecture de `models/*.json` + modèles intégrés, contrôle `version: 2` et `model.id` connu, sauvegarde d'un projet comme modèle, retrait (intégrés protégés) | `api/library.py`, `api/studio.py`, `agent/tools.py` ; écrit `models/*.json` |
-| `brands.py` | 144 | **packs de marque client** : `list_brands`, `get_pack`, `save_brand`, `delete_brand`, `apply_to_project` (retourne le projet patché, **sans l'écrire**), `capture_from_project`. Normalise via `shortvideos.branding` (erreurs bloquantes, avertissements remontés) | `api/brands.py` ; écrit `brands/<id>.json` |
+| `brands.py` | 144 | **packs de marque client** : `list_brands`, `get_pack`, `save_brand`, `delete_brand`, `apply_to_project` (retourne le projet patché, **sans l'écrire**), `capture_from_project`. Normalise via `shortvideos.branding` (erreurs bloquantes, avertissements remontés) | `api/brands.py`, `agent/tools.py` (`list_brands`, `get_brand`), `agent/actions.py` (`brand_apply`, `brand_capture`) ; écrit `brands/<id>.json` |
+| `sources.py` | 329 | **banques de contenu** : `CATALOG` de 7 fournisseurs (pexels, pixabay, unsplash, nasa, freesound, jamendo, archive), URL de test **fixées côté serveur** (anti-SSRF : le navigateur ne choisit que l'id), `save()` (clé en écriture seule, `clear_key` explicite), `public_state()` / `state_of()` (booléens + `key_hint` « •••• » + 4 derniers caractères, **jamais la clé**), `list_sources()`, `test_connection()` (appel réel borné, repli `trust_env=False` si le `NO_PROXY` de la machine est mal formé) | `api/sources.py`, `agent/tools.py` (`get_sources_state`), `agent/actions.py` (`sources_test`, `sources_toggle`) ; écrit `server/sources.json` (gitignoré) |
 | `delivery.py` | 253 | **paquet ZIP d'un lot** : `status(batch_id)` (vue page Livraison), `publish_of(project)` (ne recopie que `title` / `description` / `hashtags` non vides), `build_package(batch_id, job)` (monte `videos/`, `subtitles/*.srt`, `thumbnails/*.png`, `metadata/*.json`, `manifeste.{json,csv}`, `LISEZ-MOI.txt` ; écriture `.part.zip` puis remplacement atomique, verrou « un seul paquet par lot »), `package_path` | `api/delivery.py` (dans un `Job`) ; écrit `batch/deliveries/<id>-<nom>.zip` + son `.package.json` |
 | `moments.py` | 487 | **analyses de moments forts** : `providers_state()` (voies réellement ouvertes + raison écrite), `resolve_source()` (`media://` uniquement), `analyze_create_job()` (transcription → énergie → détection dans un `Job`, **rien d'écrit avant la fin**, WAV supprimé après mesure), `list_analyses` / `get_analysis` / `recompute` (détection seule, **aucun nouvel appel ASR**) / `delete_analysis`, et `generate_project()` — **le seul chemin qui écrit dans `projects/`** : extrait vocal + miniature importés en `media://`, projet validé (**invalide ⇒ 400, rien d'écrit**), `.srt` frère, **409** si le nom existe sans `overwrite` | `api/moments.py` ; écrit `moments/<id>.json`, `moments/work/<id>/energy.json`, et sur clic `projects/<nom>.json` + `.srt`, `media/*` |
 | `skills.py` | 277 | paquet de connaissances : catalogue, lecture d'un document, `build_context()`, relecture de `web/package.json` pour injecter « ETAT DU PROJET » | `api/skills.py`, `agent/context.py`, `agent/retrieval.py` ; lit `skills/remotion/` |
 
-### 4.4 `server/api/` — les 16 routeurs (2 538 lignes, hors `__init__.py`)
+### 4.4 `server/api/` — les 19 routeurs (2 986 lignes, hors `__init__.py`)
 
 | Fichier | Lig. | Préfixe | Routes | Particularité |
 | --- | --- | --- | --- | --- |
-| `agent.py` | 209 | `/api/agent` | 10 | `status`, `capabilities`, `index`, `check`, `models`, `search`, `ask`, `proposals/{id}`, `…/accept`, `…/reject` |
+| `agent.py` | 318 | `/api/agent` | 17 | `status`, `capabilities`, `index`, `check`, `models`, `search`, `ask`, `proposals/{id}`, `…/accept`, **`…/execute`** (action confirmée, jeton + contexte figé), `…/reject`, et l'autopilote : `autopilot/plan`, `autopilot/start`, `autopilot/{job_id}` (+ `cancel`, `file`, `format/{name}`) |
 | `batch.py` | 291 | `/api/batch` | 16 | `setup`, `fields`, `csv`, `csv/{id}`, `plan`, `line`, `start`, liste, détail, `start/{id}`, `cancel`, `retry`, `manifest`, `manifest/file`, `file?position=`, `DELETE` |
 | `brands.py` | 72 | `/api/brands` | 6 | liste, `GET /{id}`, POST (enregistrer), `/capture` (pack depuis un projet), `POST /{id}/apply` (**renvoie le projet patché, n'écrit jamais**), `DELETE /{id}` ; ids bornés (`/ \ . :` refusés) |
 | `clips.py` | 526 | `/api/clips` | 8 | sessions dans `CLIPS_DIR / sid` avec `assert_local_dir` + `safe_name` ; service `/files/{sid}/{name}` |
@@ -423,23 +428,30 @@ youtube_clipper\
 | `library.py` | 50 | `/api/library` | 4 | liste, `GET /{id}`, POST (enregistrer), DELETE (perso uniquement) |
 | `media_routes.py` | 42 | `/api/media` | 2 | `POST /upload`, `GET /{id}` |
 | `moments.py` | 124 | `/api/moments` | 7 | `GET ""` (analyses), `GET /providers`, `POST /analyze` (**renvoie un `job_id`**), `GET /{id}`, `POST /{id}/recompute`, `POST /{id}/generate` (**seul écrivain de projet**), `DELETE /{id}` ; id d'analyse alphanumérique, id de moment alphanumérique + `-`/`_` |
+| `montage.py` | 164 | `/api/montage` | 5 | `POST /validate` (EDL, erreurs indexées, sans écriture), `POST ""` (rendu FFmpeg en job annulable), `GET /{job_id}`, `POST /{job_id}/cancel`, `GET /{job_id}/file` |
 | `podcast.py` | 293 | `/api/podcast` | 6 | `stats`, `clips`, `videos`, `generate`, `legacy/import`, `files/{rel_path}` |
 | `projects.py` | 101 | `/api/projects` | 5 | liste, POST (nom borné), `GET/{name}` (migration v1 automatique), DELETE, `POST /validate` |
 | `settings.py` | 278 | `/api/settings` | 2 | `GET ""` ne renvoie **jamais** une clé (uniquement des booléens et l'état public) et porte le bloc **`asr`** (`public_asr()` : fournisseur, modèles Whisper, langue, `groq_key_configured`, voies disponibles + raison, `local_backend`) ; `POST ""` applique la liste blanche de clés, dont `AsrSettings` (clé dédiée, effacement explicite, modèle Groq vérifié) |
 | `skills.py` | 45 | `/api/skills` | 4 | catalogue, `context`, `doc/{chemin}`, `/{id}` ; lecture seule bornée à `skills/remotion/` |
+| `sources.py` | 54 | `/api/sources` | 3 | `GET ""` (état public des 7 fournisseurs : booléens + `key_hint`, **jamais la clé**), `POST /{source_id}` (enregistrer/effacer une clé, activer/mettre en pause ; champ vide = clé conservée), `POST /{source_id}/test` (test réel, URL fixée serveur) |
 | `studio.py` | 201 | `/api/studio` | 9 | `effects` (**le catalogue des effets, renvoyé par `effects.manifest()` de `shortvideos/effects.py` — la même liste pour l'éditeur et pour l'assistant**), `models`, `fonts`, `default`, `prepare` (**le même objet pour le Player et le rendu**), `upgrade`, `provenance`, `provenance/{id}`, `inspect` |
+| `tts.py` | 117 | `/api/tts` | 3 | `GET /status` (voix installées, moteur), `POST /download` (modèle Piper/Kokoro **au clic explicite**), `POST /generate` (texte → WAV en job) |
 
-### 4.5 `server/agent/` — l'assistant (3 789 lignes)
+### 4.5 `server/agent/` — l'assistant (6 222 lignes)
 
 | Fichier | Lig. | Ce qu'il fait réellement | Entrées / sorties |
 | --- | --- | --- | --- |
-| `llm_client.py` | 456 | client **OpenAI-compatible** en `httpx` : `chat(messages, …)` avec streaming optionnel, `check_connection()`, `list_models()`, `endpoint_of()`, `_headers()` (clé + `X-PIN`), `CHARS_PER_TOKEN = 3` pour l'estimation, `ChatResult(text, model, latency_ms, tokens)` | lit les réglages serveur ; **aucun** écrit |
-| `capabilities.py` | 467 | construit le **manifeste des capacités réelles** depuis le registre de compositions, la bibliothèque, `schema.py`, `effects.py` (**les 25 effets du catalogue, `_effects_brief()` / `_effects_lines()`**), `fontCatalog.json`, `web/package.json` ; `prompt_block()`, `compact_prompt_block()`, `production_prompt_block()` | lit le disque et les modules ; renvoie des chaînes bornées |
-| `retrieval.py` | 563 | index FTS5 `knowledge/agent_index.sqlite3` : `split_sections()`, `_fold()` (retrait des accents pour la recherche), tables `docs`/`chunks`/`chunks_fts`/`meta`, `build()`, `search()`, ~290 documents / 2 300 sections (paquet montage inclus) | **écrit** `knowledge/agent_index.sqlite3` |
-| `context.py` | 421 | assemblage du **prompt borné** : rôle, interdits, manifeste, protocole JSON, contexte (projet réssumé ou colonnes CSV), documents ; troncature json → outline → compact ; `PROTOCOL` décrit le contrat de réponse | appelle `capabilities`, `retrieval` |
-| `proposals.py` | 837 | **contrat** : parsing de la réponse, validation typée (`project_patch`, `project_new`, `library_save`, `batch_plan`, `knowledge_answer`, `none`), liste blanche de clés, **`set_effects` borné au catalogue `shortvideos/effects.py`**, `state` = ok/warning/error, révision, détection de conflit (le projet a bougé), `accept()` | registre en mémoire TTL 1 h |
-| `tools.py` | 566 | 22 outils de lecture (`READ_TOOLS`), 6 outils de proposition, 4 outils « exécutables uniquement par l'utilisateur » ; `describe()`, `execute(name, args, ctx)` avec bornes (`MAX_SEARCH_RESULTS=8`, `MAX_ASSETS=60`, `MAX_ROWS_PREVIEW=12`, `MAX_TEMPLATE_CHARS=12 000`, `MAX_PIPELINE_SPECS=20`) | lit les modules serveur ; **n'écrit jamais** (sauf `scan_media_folder`, explicitement demandé) |
-| `service.py` | 468 | orchestration en 6 étapes d'un `Job` : contexte → appel → outil ou contrat → réparation (×2) → validation → proposition ; self-heal ×0.65 du budget si le contexte était trop gros (`KIND_CONTEXT`) ; `RECORD_TTL = 3600`, `_MANIFEST_TTL = 30` | `api/agent.py` ; écrit dans `knowledge/` via retrieval |
+| `llm_client.py` | 474 | client **OpenAI-compatible** en `httpx` : `chat(messages, …)` avec streaming optionnel, `check_connection()`, `list_models()`, `endpoint_of()`, `_headers()` (clé + `X-PIN`), `CHARS_PER_TOKEN = 3` pour l'estimation, `ChatResult(text, model, latency_ms, tokens)` ; mémoire adaptative au fournisseur | lit les réglages serveur ; **aucun** écrit |
+| `capabilities.py` | 701 | construit le **manifeste des capacités réelles** depuis le registre de compositions, la bibliothèque, `schema.py`, `effects.py` (**les 25 effets du catalogue**), `fontCatalog.json`, `web/package.json`, **`content_sources`** (état public des banques) et **`brands`** (packs enregistrés) ; `prompt_block()`, `compact_prompt_block()`, `production_prompt_block()` — les lignes Banques/Packs marque rappellent que **les clés ne se saisissent que sur la page Banques, jamais dans le chat** | lit le disque et les modules ; renvoie des chaînes bornées |
+| `retrieval.py` | 564 | index FTS5 `knowledge/agent_index.sqlite3` : `split_sections()`, `_fold()` (retrait des accents pour la recherche), tables `docs`/`chunks`/`chunks_fts`/`meta`, `build()`, `search()`, ~290 documents / 2 300 sections (paquet montage inclus) | **écrit** `knowledge/agent_index.sqlite3` |
+| `context.py` | 518 | assemblage du **prompt borné** : rôle, interdits, manifeste, protocole JSON, contexte (projet réssumé ou colonnes CSV), documents ; troncature json → outline → compact ; `PROTOCOL` décrit le contrat de réponse ; **règle 12** : banques via `get_sources_state` puis actions confirmées, clés jamais dans le chat ; marques via `list_brands`/`get_brand`, `brand_apply` (opérations validées theme/signature/audio), `brand_capture` | appelle `capabilities`, `retrieval` |
+| `proposals.py` | 1 166 | **contrat** : parsing de la réponse, validation typée (`project_patch`, `project_new`, `library_save`, `batch_plan`, `autopilot_plan`, **`studio_action`**, `question`, `unavailable`), liste blanche de clés, **`set_effects` borné au catalogue `shortvideos/effects.py`**, `state` = ok/warning/error, révision, détection de conflit (le projet a bougé), `accept()`, `from_reply()` + `public_view()` (le navigateur ne voit jamais le candidat complet avant acceptation) | registre en mémoire TTL 1 h |
+| `tools.py` | 733 | **29 outils de lecture** (`READ_TOOLS`, dont `get_action_catalog`, `get_tts_status`, `get_moments`, **`get_sources_state`**, **`list_brands`**, **`get_brand`**), 6 outils de proposition, 4 outils « exécutables uniquement par l'utilisateur » ; `describe()`, `execute(name, args, ctx)` avec bornes (`MAX_SEARCH_RESULTS=8`, `MAX_ASSETS=60`, `MAX_ROWS_PREVIEW=12`, `MAX_TEMPLATE_CHARS=12 000`, `MAX_PIPELINE_SPECS=20`) | lit les modules serveur ; **n'écrit jamais** (sauf `scan_media_folder`, explicitement demandé) |
+| `actions.py` | 486 | **les 21 actions confirmées** (`SCHEMAS`, paramètres Pydantic stricts) : `describe()` valide AVANT la proposition, calcule l'impact et **fige le contexte** (révision du projet, empreintes des opérations, état public d'une source…) ; `start()` exécute dans un `Job` annulable après le clic ; `brand_apply` produit un **followup `project_patch` validé** (theme/signature/audio seulement), `brand_capture` enregistre un pack sans toucher au projet | `service.execute_action`, `api/agent.py` (`…/execute`) ; écrit via les modules métier, jamais en shell |
+| `service.py` | 586 | orchestration en 6 étapes d'un `Job` : contexte → appel → outil ou contrat → réparation (×2) → validation → proposition ; self-heal ×0.65 du budget si le contexte était trop gros (`KIND_CONTEXT`) ; `execute_action()` revérifie le jeton de confirmation et **compare tout le contexte figé** (dérive ⇒ 424 ; révision du projet changée ⇒ 409) ; `store_followup()` ; `RECORD_TTL = 3600`, `_MANIFEST_TTL = 30` | `api/agent.py` ; écrit dans `knowledge/` via retrieval |
+| `autopilot.py` | 619 | plans autopilote (`autopilot_plan`) : étapes fixes script → design → voix → export, orchestration bornée, chaque écriture reste une proposition ou une action confirmée | `api/agent.py` (routes autopilot) |
+| `review.py` | 272 | `project_review` : relecture technique du projet, **passe de vision optionnelle** (`vision_review`, off par défaut) sur quelques frames rendues ; produit des opérations de correction **validées**, jamais appliquées automatiquement | `actions.py` |
+| `critique.py` | 103 | `project_critique` : avis artistique **consultatif** ; améliorations proposées en opérations validées, l'utilisateur retient via aperçu puis Appliquer | `actions.py` |
 
 ### 4.6 `shortvideos/` — moteur métier (5 183 lignes, hors `__init__.py`)
 
@@ -476,10 +488,10 @@ Racine : `package.json` (dépendances, `build = tsc --noEmit && vite build`),
 | Fichier | Lig. | Rôle |
 | --- | --- | --- |
 | `src/main.tsx` | 13 | `createRoot`, `BrowserRouter` |
-| `src/App.tsx` | 145 | **coquille de l'application** : `<AssistantProvider>` → `Shell` = `Sidebar` (layout des `NAV_GROUPS`) + `<Routes>` (11 pages, `*` → Cockpit) + **`<AssistantDock />`** + **`<CommandPalette />`** ; c'est ici que `Ctrl+K` / `Ctrl+I` / `Ctrl+/` sont écoutés |
+| `src/App.tsx` | 205 | **coquille de l'application** : `<AssistantProvider>` → `Shell` = `Sidebar` (layout des `NAV_GROUPS`) + `<Routes>` (15 pages, `*` → Studio) + **`<AssistantDock />`** + **`<CommandPalette />`** ; c'est ici que `Ctrl+K` / `Ctrl+I` / `Ctrl+/` sont écoutés |
 | `src/index.css` | 58 | thème sombre + helpers `.panel`, `.panel-title`, `.input-base`, `.field-label` |
 | `src/api/client.ts` | 1 089 | **contrat HTTP typé** de toutes les routes : `Project`, `PrepareResponse`, `Proposal`, `AgentStatus`, `LlmPublic`, `BatchPlan`, `Folder`, `SettingsPublic`, `EffectsManifest` / `EffectSpec` / `EffectParamSpec` + `api.studioEffects()`, **`DeliveryStatus`** (batch, `total`, `rendered`, `is_packaging`, `package` = fichier / octets / `videos` / `subtitles` / `thumbnails` / `warnings` / date, et le tableau `items` position · nom · fichier · statut · durée · octets · `rendered`) et **`BrandPackData` / `BrandPackSummary`** (thème, signature, audio, modèles autorisés) + `api.deliveryStatus()` / `deliveryPackage()` / `deliveryPackageUrl()` / `brandList()` / `brandGet()` / `brandSave()` / `brandDelete()` / `brandApply()` / `brandCapture()`… + **les types des moments forts** (`AsrProviderState`, `AsrLocalBackend`, `AsrPublic` / `AsrPayload`, `MomentsSetup`, `MomentCue`, `MomentItem`, `MomentTimelineSpec`, `AnalysisSummary` / `AnalysisRecord`, `MomentPublishBlock`, `MomentGenerateResult`) et `api.momentsSetup()` / `momentsList()` / `momentsAnalysis()` / `momentsAnalyze()` / `momentsRecompute()` / `momentsGenerate()` / `momentsDelete()` + `apiErrorMessage()` |
-| `src/lib/navigation.ts` | 122 | **source de vérité de la navigation** : `NAV_GROUPS` (Pilotage / Automatisation / Sources / Système), 10 entrées `{to, label, icon, description}` — dont `/delivery` **Livraison** dans Automatisation ; lu par `App` **et** par la palette |
+| `src/lib/navigation.ts` | 165 | **source de vérité de la navigation** : `NAV_GROUPS` (Pilotage / Création / Automatisation / Sources / Système), 15 entrées `{to, label, icon, description}` — dont `/sources` **Banques** dans Sources, `/tts` et `/montage` dans Création ; lu par `App` **et** par la palette |
 | `src/lib/assistant.tsx` | 172 | `AssistantProvider` : conversation **unique et persistante** (ouverture, contexte, demande en vol) + `usePublishAssistant(ctx, handlers)` — la page montée publie son contexte (`project`, `selection`, `mode`, `csvColumns`) et ses gestionnaires (`onApply`, `onLibrarySave`, `onBatchPlan`, `notify`) ; `ask(text)` ouvre le tiroir et lance la demande ; le démontage **dépublie** (`publish({}, {})`), donc plus aucun bouton « Appliquer » ne peut viser un éditeur déjà parti. Ouverture mémorisée dans `localStorage["studio.assistant.open"]`, tolérante si le stockage est indisponible |
 | `src/lib/jobs.ts` | 99 | `call()` (fetch + erreur typée `HttpError`), `useJobPolling()`, `cancelJob()`, `formatBytes()`, `formatDuration()` |
 | `src/lib/utils.ts` | 6 | `cn()` = clsx + tailwind-merge |
@@ -491,6 +503,11 @@ Racine : `package.json` (dépendances, `build = tsc --noEmit && vite build`),
 | `src/components/agent/AgentPanel.tsx` | 376 | cœur de l'assistant : saisie, `mode` design/production, job pollé, tools observés, carte de proposition, accept/reject/correct, sources. Props `externalRequest` (une page peut pré-remplir et lancer une demande, utilisé par le Cockpit et la palette), `applyHint`, `visible` (statut de l'assistant relu à chaque ouverture du tiroir) et `onConfigure` (bouton « Configurer l'assistant » du bandeau non configuré) |
 | `src/components/agent/ProposalCard.tsx` | 187 | rendu d'une proposition : résumé, **diff des opérations — dont `set_effects`**, warnings, état de validation, bouton d'acceptation (**label adapté au mode**) |
 | `src/components/agent/SourcesPanel.tsx` | 156 | recherche dans l'index (`/api/agent/search`) et relecture des sections citées |
+| `src/components/agent/ActionTracker.tsx` | 278 | **suivi d'une action confirmée** : progression du job, annulation, résumé borné, JSON d'observation whitelisté (jamais de traceback ni de binaire), liens export/montage/livraison, frames échantillonnées ; blocs dédiés `sources_test` (badge connexion valide/non valide + latence + aperçu), `brand_apply` (opérations validées theme/signature/audio), `brand_capture` (pack enregistré) ; l'observation renvoyée au modèle est **explicitement non fiable** (`actionObservation`) et ne déclenche aucun suivi automatique |
+| `src/pages/StudioPage.tsx` | 296 | **accueil `/`** : conversation avec l'assistant + aperçu vidéo, les modifications validées s'appliquent en direct |
+| `src/pages/TtsPage.tsx` | 242 | **voix off `/tts`** : catalogue Piper/Kokoro, téléchargement d'un modèle **au clic**, texte → WAV (job), affectation au projet via l'assistant |
+| `src/pages/MontagePage.tsx` | 611 | **montage footage `/montage`** : éditeur EDL (plans `media://`, transitions, musique, étalonnage), validation serveur, rendu FFmpeg en job annulable |
+| `src/pages/SourcesPage.tsx` | 535 | **banques de contenu `/sources`** : hero + compteurs réels (clés enregistrées / prêtes), recherche et filtres par type/statut, carte par fournisseur — saisie de clé (écriture seule, œil pour masquer, champ vide = clé conservée, effacement en deux temps), **test réel** (`POST /api/sources/{id}/test`, latence + aperçu), interrupteur Active/En pause ; aucune clé n'est jamais renvoyée par le serveur, seuls `key_configured` et `key_hint` |
 | `src/pages/CockpitPage.tsx` | 500 | **page d'accueil `/`** : hero de demande à l'assistant (`ask(text)`), 4 exemples cliquables, cartes *Effets* (25, 7 catégories, chaque catégorie envoie une question à l'assistant), *File de production*, *Derniers projets*, *Modèles*, *Points de contrôle*, *Aller plus vite*. **Configuration guidée** (`SetupAssistant`) affichée en tête tant que l'assistant n'est pas prêt ; « Demander » est alors désactivé. **Une carte n'affiche que des données réellement reçues** : si l'appel échoue, la carte affiche l'erreur — jamais un nombre inventé |
 | `src/pages/DesignPage.tsx` | 782 | l'éditeur v2 : barre d'outils (dont les boutons **Assistant** et **Packs**), scènes, Player, **Inspecteur seul dans la 3ᵉ colonne** (l'onglet « Assistant IA » a disparu : le tiroir global s'est substitué au panneau intégré), dialogues Ouvrir / Export / Bibliothèque / **Packs de marque** ; le bouton « Appliquer » d'un pack passe par `applyEdit(patched, true)`, donc **une marque appliquée s'annule et s'autosauvegarde comme n'importe quel réglage** ; publie son contexte via `usePublishAssistant` |
 | `src/pages/design/panels.tsx` | 1117 | `InspectorPanel`, `ScenesPanel`, `TimelineBar`, les `<Section>` de réglage et **`EffectsSection`** : sélecteur groupé par catégorie, compteur `n/4`, réglages bornés (slider / nombre / booléen / couleur / select / texte), badges `audio requis` / `audio réel`, bouton « appliquer à toutes les scènes », message d'erreur explicite si un id n'est plus au catalogue |
@@ -556,9 +573,21 @@ tests\
 │                                  qui ne lève jamais, assemblage complet d'un ZIP
 ├── test_branding.py              11 : normalisation d'un pack (chemin/URL/couleur/police/modele),
 │                                  volume borné, apply_brand pur, store brands/ (écrit ou bloqué)
+├── test_sources.py               23 : banques de contenu — clé jamais exposée (hint seul), champ
+│                                  vide conserve la clé, effacement explicite, URL de test fixées
+│                                  serveur, 401/429/réseau/non-JSON, NASA DEMO_KEY, archive sans
+│                                  clé, stockage corrompu, repli proxy mal formé (trust_env=False)
+├── test_agent_sources_brands.py  15 : branchement assistant — get_sources_state sans fuite de clé,
+│                                  test sans clé renvoie vers la page Banques, test/activation
+│                                  confirmés (contexte figé, dérive ⇒ 424), brand_apply en
+│                                  project_patch validé (theme/signature/audio, scènes intactes,
+│                                  conflit de révision ⇒ 409), pack sans effet refusé,
+│                                  brand_capture sans toucher au projet
 ├── e2e_export_remotion.py        rendu complet hors interface
 └── e2e_cancel_overwrite.py       annulation en cours de rendu + refus d'écrasement
 ```
+
+Suite complète : **570 tests** (`python -m pytest tests -q --basetemp=.pytest_tmp`).
 
 ---
 
@@ -584,6 +613,7 @@ tests\
 | `batch/deliveries/<id>-<nom>.package.json` | JSON | `server/delivery.py` | état du paquet : date de préparation, nombre de vidéos / sous-titres / miniatures, avertissements (miniature ratée, ligne sans média) ; **un paquet sans ce fichier est considéré comme absent** |
 | `knowledge/agent_index.sqlite3` | SQLite | `agent/retrieval.py` | index FTS5 des connaissances (~290 documents / 2 300 sections, ~6 Mo, paquet montage inclus) |
 | `server/settings.json` | JSON plat | `settings.py` | `host`, `port`, `groq_api_key` et les 18 clés `llm_*` — **jamais renvoyées au navigateur** |
+| `server/sources.json` | JSON `{id: {key, enabled}}` | `server/sources.py` (page Banques) | clés des banques de contenu — **écriture seule** : aucune réponse HTTP ni contexte LLM ne contient la clé, seulement `key_configured`, `key_hint` (« •••• » + 4 derniers caractères) et `enabled` ; gitignoré, comme `.env` (copie de référence de l'utilisateur) |
 | `clips/<sid>/` | MP4, SRT, JSON | `api/clips.py` | session : vidéo téléchargée, transcription, clips extraits |
 | `downloads/` | binaire | `downloader.py` | téléversements temporaires yt-dlp |
 | `podcast_db/` | `catalog.csv` + `output/` | `database.py`, `podcaster.py` | base de phrases et vidéos assemblées |
@@ -916,7 +946,11 @@ ci-dessous décrivent ce qu'elles **publient** dans ce tiroir et ce que leurs pr
 
 ---
 
-### 8.1 Cockpit — `/`
+### 8.1 Cockpit — `/cockpit`
+
+> L'accueil `/` est désormais le **Studio** (`StudioPage.tsx`, conversation + aperçu) ; le
+> Cockpit reste le tableau de bord, à `/cockpit`. Les pages Voix off (`/tts`) et Montage
+> (`/montage`) sont décrites par leurs modules (§4.4, §9.11) ; Banques a sa section §8.11.
 
 **Sert à** démarrer n'importe quelle journée de travail sans savoir encore où l'on va : l'assistant
 au centre, et autour les seules choses qui répondent à « où en suis-je ? ».
@@ -1236,6 +1270,31 @@ Tout est posé dans `batch/deliveries/`, sous-dossier de `BATCH_DIR` donc déjà
 
 ---
 
+### 8.11 Banques — `/sources`
+
+**Sert à** enregistrer les clés API des banques de contenu libres de droits, les tester réellement
+et les activer — le terrain de récupération de médias pour les projets et les lots.
+`web/src/pages/SourcesPage.tsx` (535 lignes). **Loi de la page : une clé est en écriture seule.**
+Le serveur ne renvoie jamais la clé enregistrée : seulement `key_configured`, `key_hint`
+(« •••• » + 4 derniers caractères), `enabled` et `ready`. La saisie se fait **ici, jamais dans le
+chat de l'assistant** (règle 12 du contexte agent).
+
+| Élément | Détail | Endpoint |
+| --- | --- | --- |
+| Hero + compteurs | clés enregistrées / fournisseurs prêts, calculés depuis l'état public réel — jamais un nombre inventé | `GET /api/sources` |
+| Recherche + filtres | texte libre, filtres par type (vidéo/photo/audio) et par statut (toutes / prêtes / à configurer / en pause) | — (état local) |
+| Carte fournisseur | libellé, types, lien d'inscription, champ de clé (œil pour masquer), **Enregistrer** (bouton ou `Entrée`), **Tester**, interrupteur Active/En pause | `POST /api/sources/{id}` |
+| Champ vide | enregistrer avec un champ vide **conserve** la clé stockée ; l'effacement est explicite (`clear_key`), en deux temps avec retour automatique | `POST /api/sources/{id}` |
+| Test réel | appel serveur vers l'URL officielle **fixée dans `sources.CATALOG`** (anti-SSRF : le navigateur ne choisit que l'id du fournisseur) ; résultat = ok/message, latence ms, aperçu (ex. titre d'une photo Pexels) ; 401/429/réseau/non-JSON affichés en clair | `POST /api/sources/{id}/test` |
+| NASA | clé optionnelle : `DEMO_KEY` intégré si aucune clé n'est saisie | idem |
+| Internet Archive | sans clé (`key_required: false`), testable directement | idem |
+
+Côté assistant (§9.12) : `get_sources_state` lit le même état public ; `sources_test` et
+`sources_toggle` sont des **actions confirmées** (jeton + contexte figé). Une clé manquante pour
+un test renvoie l'utilisateur vers cette page — l'assistant ne demande jamais une clé dans le chat.
+
+---
+
 ## 9. Assistant IA du studio (`server/agent/`)
 
 ### 9.1 Ce qu'il est, ce qu'il n'est pas
@@ -1313,7 +1372,7 @@ comme données**, avec une clause anti-injection : le contenu d'un CSV ou d'un d
 ### 9.5 Le contrat des propositions
 
 Types acceptés (`proposals.PROPOSAL_TYPES`) : `question` · `project_new` · `project_patch` ·
-`library_save` · `batch_plan` · `unavailable`.
+`library_save` · `batch_plan` · `autopilot_plan` · **`studio_action`** (§9.12) · `unavailable`.
 
 Clés fermées (`proposals.py:32-56`) : `THEME_KEYS`, `EXPORT_KEYS = {width,height,fps}`,
 `VARIATION_KEYS = {seed}`, `SCENE_KEYS` (6 : `duration`, `label`, `hidden`,
@@ -1354,15 +1413,16 @@ la proposition ne lance rien.
 `rebase` obligatoire — **on n'écrase pas des modifications récentes**. `reject(id)` purgé le
 registre. TTL 1 h, registre en mémoire, aucune donnée persistée.
 
-### 9.6 Les 32 outils (`server/agent/tools.py:34-80`)
+### 9.6 Les 39 outils (`server/agent/tools.py`)
 
-| Famille | Outils de lecture (22, utilisables par le modèle) |
+| Famille | Outils de lecture (29, utilisables par le modèle) |
 | --- | --- |
-| connaissances & capacités | `get_capabilities`, `search_knowledge`, `read_knowledge` |
+| connaissances & capacités | `get_capabilities`, **`get_action_catalog`**, **`get_tts_status`**, **`get_moments`**, `search_knowledge`, `read_knowledge` |
 | design & bibliothèque | `get_current_project`, `list_templates`, `get_template`, `list_projects`, `list_fonts`, **`list_effects`**, **`get_montage_pipelines`**, **`validate_montage`** |
 | médias | `list_assets`, `search_assets`, `get_asset_provenance`, `list_media_folders`, `scan_media_folder` *(uniquement sur demande explicite de l'utilisateur)* |
 | production | `get_batch_fields`, `get_csv_preview`, `compute_batch_plan`, `get_batch_status`, `get_queue_status` |
 | clips & podcast | `get_clips_sessions`, `get_podcast_stats` |
+| **banques & marques** | **`get_sources_state`** (état public des 7 fournisseurs : booléens + `key_hint`, **jamais la clé** ; la note rappelle que la saisie se fait sur la page Banques), **`list_brands`**, **`get_brand`** |
 
 `list_effects` renvoie le **catalogue serveur filtré et borné** — filtres `id`, `scope`,
 `target`, `category`, plafond `MAX_EFFECT_SPECS = 40`, chaque effet avec **ses réglages et leurs
@@ -1506,6 +1566,45 @@ La répartition des moteurs est assumée : **Remotion rend les compositions
 animées v2** (motion design, titres, sous-titres), **FFmpeg assemble le footage
 réel** (EDL). Un plan sans rendu reste un plan : l'assistant ne présente jamais
 un `edit_decisions` comme une vidéo.
+
+### 9.12 Les 21 actions confirmées (`studio_action`)
+
+Quand la demande touche le monde réel (rendre, télécharger, tester une connexion,
+appliquer une marque), l'assistant ne répond pas par du texte libre : il produit une
+proposition `studio_action` portant **une seule action** du catalogue `actions.SCHEMAS`
+(paramètres Pydantic stricts, `additionalProperties: false`). Le protocole est le même
+pour toutes :
+
+1. **`actions.describe()` valide AVANT la proposition** : paramètres, existence des
+   ressources, projet requis, et calcule l'**impact** affiché à l'utilisateur ;
+2. le **contexte est figé** dans la proposition : révision du projet pour les actions
+   qui l'exigent (`project_review`, `project_critique`, `project_export`, `brand_apply`,
+   `brand_capture`), empreintes des opérations, état public d'une source, EDL normalisé
+   + taille/mtime des médias pour `montage_render`… ;
+3. l'utilisateur clique : `POST /api/agent/proposals/{id}/execute` avec le **jeton de
+   confirmation** (32 caractères). `service.execute_action` re-`describe` et compare
+   **toutes** les clés du contexte : toute dérive ⇒ **424**, révision du projet changée
+   ⇒ **409** avec `current_revision`. Une proposition ne se rejoue pas ;
+4. le travail long tourne dans un `Job` annulable (`jobs.create_job("agent-action", …)`),
+   suivi par `ActionTracker.tsx` (progression, annulation, résultat borné).
+
+| Domaine | Actions | Particularité |
+| --- | --- | --- |
+| projet | `project_review`, `project_critique`, `project_export` | review/critique produisent un **followup `project_patch` validé** (corrections ou avis consultatif) — jamais appliqué sans clic ; `autoApply` du Design exclut `project_critique` |
+| montage | `montage_render` | EDL revalidé, nom d'export libre exigé, médias photographiés (§9.11) |
+| clips | `clips_download`, `clips_analyze`, `clips_extract` | yt-dlp / Groq / FFmpeg, rien sans clic |
+| voix | `tts_download`, `tts_generate` | modèle téléchargé **seulement** au clic confirmé ; WAV → `media://` |
+| image | `image_generate` | JPEG Pollinations (sans clé) ; l'affectation au projet reste une proposition **séparée** |
+| lots | `batch_start`, `batch_retry`, `batch_cancel` | la file SQLite reste la seule source de vérité |
+| livraison | `delivery_package` | ZIP assemblé en job, lien de téléchargement serveur |
+| moments | `moments_analyze`, `moments_generate` | transcription puis projet au clic |
+| réglages | `settings_update` | liste blanche de réglages **non secrets** ; ni clé, ni fournisseur, ni URL, ni chemin |
+| **banques** | **`sources_test`**, **`sources_toggle`** | contexte = `{key_configured, enabled}` de la source ; test sans clé requise ⇒ erreur qui renvoie vers la **page Banques** ; la clé stockée sert à l'appel serveur mais n'est **ni affichée ni envoyée au modèle** ; aucun contenu téléchargé |
+| **marques** | **`brand_apply`**, **`brand_capture`** | `brand_apply` : pack appliqué à une copie, validé (`validate_candidate` + refs médias), diff réduit en opérations `set_theme`/`set_signature`/`set_audio` (position aplatie en `position.x`/`position.y`) ; pack sans effet ⇒ refus « ne change rien » ; résultat = followup `project_patch` validé, scènes et calques intacts. `brand_capture` : `capture_from_project` écrit `brands/<id>.json`, le projet n'est pas modifié |
+
+L'observation renvoyée au tour humain suivant (`actionObservation`) est **whitelistée,
+bornée et marquée non fiable** : ids, refs `media://` sûres, résumé sans liens, statut —
+jamais d'instructions, et aucun suivi automatique n'est déclenché.
 
 ---
 
@@ -1651,8 +1750,8 @@ Voir §9.7 et §9.11. Accès borné à `skills/remotion/` (`.md` seulement) et �
 
 ## 12. API, référence complète
 
-Préfixe `/api` pour tout : **88 routes** (méthode + chemin, vérifié sur l'app FastAPI réel)
-réparties dans les 15 routeurs, plus `GET /` et le SPA. « Client » = l'appelant réel dans
+Préfixe `/api` pour tout : **113 routes** (méthode + chemin, vérifié sur l'app FastAPI réel)
+réparties dans les 19 routeurs, plus `GET /` et le SPA. « Client » = l'appelant réel dans
 `web/src/api/client.ts` ou la route du serveur.
 
 | Méthode + chemin | Rôle | Client |
@@ -1693,6 +1792,11 @@ réparties dans les 15 routeurs, plus `GET /` et le SPA. « Client » = l'appela
 | `POST /api/brands/{id}/apply` | renvoie `{project, warnings}` : **aucune route n'écrit dans un projet de travail** | Design (« Appliquer au projet ») |
 | `DELETE /api/brands/{id}` | retire le fichier du pack | Design |
 | `GET /api/settings` · `POST /api/settings` | réglages ; la clé n'est **jamais** renvoyée | Réglages, Clips |
+| `GET /api/sources` | état public des 7 banques : `key_configured`, `key_hint`, `enabled`, `ready` — **jamais la clé** | Banques, assistant (`get_sources_state`) |
+| `POST /api/sources/{id}` | enregistrer une clé (champ vide = conservée), `clear_key` explicite, activer/mettre en pause | Banques ; assistant via `sources_toggle` confirmé |
+| `POST /api/sources/{id}/test` | test réel vers l'URL officielle fixée serveur (anti-SSRF) : ok/message, latence, aperçu | Banques ; assistant via `sources_test` confirmé |
+| `GET /api/tts/status` · `POST /api/tts/download` · `POST /api/tts/generate` | voix installées, téléchargement d'un modèle **au clic**, texte → WAV en job | Voix off ; assistant via `tts_download`/`tts_generate` confirmés |
+| `POST /api/montage/validate` · `POST /api/montage` · `GET /api/montage/{job_id}` · `POST …/cancel` · `GET …/file` | EDL validé sans écriture, rendu FFmpeg en job annulable, relecture du MP4 | Montage ; assistant via `validate_montage` + `montage_render` confirmé |
 | `POST /api/clips/info` · `/download` · `/analyze` · `/extract` | téléchargement, analyse Groq, extraction FFmpeg | Clips |
 | `GET /api/clips/sessions` · `/sessions/{sid}` · `DELETE /sessions/{sid}` · `GET /files/{sid}/{name}` | sessions, relecture, nettoyage | Clips |
 | `GET /api/podcast/stats` · `/clips` · `POST /videos` · `/generate` · `/legacy/import` · `GET /files/{rel_path}` | base de phrases, recherche, assemblage, import de l'ancienne base | Podcast |
@@ -1701,7 +1805,8 @@ réparties dans les 15 routeurs, plus `GET /` et le SPA. « Client » = l'appela
 | `POST /api/agent/check` · `POST /api/agent/models` | test réel du fournisseur, modèles réellement accessibles | Réglages |
 | `POST /api/agent/search` | recherche dans les connaissances | `SourcesPanel` |
 | `POST /api/agent/ask` | lance une demande (job 6 étapes) | `AgentPanel` |
-| `GET /api/agent/proposals/{id}` (candidat seulement avec `?preview=true`) · `POST …/accept` · `POST …/reject` | contrat des propositions | `AgentPanel` |
+| `GET /api/agent/proposals/{id}` (candidat seulement avec `?preview=true`) · `POST …/accept` · **`POST …/execute`** (jeton de confirmation + contexte figé, §9.12) · `POST …/reject` | contrat des propositions et des actions confirmées | `AgentPanel`, `ActionTracker` |
+| `POST /api/agent/autopilot/plan` · `/start` · `GET /api/agent/autopilot/{job_id}` (+ `/cancel`, `/file`, `/format/{name}`) | plans autopilote : proposition puis exécution orchestrée et bornée | Studio, Cockpit |
 | `GET /` + SPA | sert `web/dist`, `/fonts/…` et `/media-cache/…` | navigateur |
 
 ---
@@ -1711,7 +1816,7 @@ réparties dans les 15 routeurs, plus `GET /` et le SPA. « Client » = l'appela
 | Module | Ce qu'il impose |
 | --- | --- |
 | `api/client.ts` (892 l.) | **contrat typé unique** : aucune route appelée en dehors ; `apiErrorMessage()` normalise les erreurs — **y compris un `detail` texte simple**, un objet `{message, errors}` ou une liste ; `Proposal`, `AgentStatus`, `PrepareResponse`, `BatchPlan`, `LlmPublic`, `SettingsPublic`, `EffectsManifest`, `DeliveryStatus`, `BrandPackData` / `BrandPackSummary` |
-| `lib/navigation.ts` (122 l.) | la navigation est **des données**, pas du JSX dupliqué : `NAV_GROUPS` porte `to / label / icon / description`, et la barre latérale comme la palette en découlent |
+| `lib/navigation.ts` (165 l.) | la navigation est **des données**, pas du JSX dupliqué : `NAV_GROUPS` porte `to / label / icon / description`, et la barre latérale comme la palette en découlent |
 | `lib/assistant.tsx` (172 l.) | l'assistant est un **contexte**, pas un composant de page : `useAssistant()` (open / toggle / `ask` / data) + `usePublishAssistant(ctx, handlers)` ; aucune page ne monte son propre `AgentPanel` |
 | `lib/jobs.ts` (99 l.) | `call()` (fetch, `HttpError` typé), `useJobPolling()` (borné, arrêt au démontage), `cancelJob()`, `formatBytes()`, `formatDuration()` |
 | `components/AssistantDock.tsx` (134 l.) | colonne **dans le flux** (jamais par-dessus l'inspecteur), rail de 26 px fermé, contenu monté en permanence, `Échap` ferme |

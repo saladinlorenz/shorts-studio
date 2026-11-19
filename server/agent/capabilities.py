@@ -224,9 +224,32 @@ def build() -> dict:
             "react": deps.get("react", "absent"),
         },
         "knowledge_sources": _knowledge_sources(),
+        "content_sources": _content_sources(),
+        "brands": _brands_brief(),
         "not_available": _not_available(deps),
     }
     return manifest
+
+
+def _content_sources() -> dict:
+    from .. import sources as sources_mod
+
+    data = sources_mod.list_sources()
+    return {
+        "providers": [
+            {k: p[k] for k in ("id", "label", "kinds", "key_required", "key_configured", "enabled", "ready")}
+            for p in data["providers"]
+        ],
+        "configured": data["configured"],
+        "ready": data["ready"],
+        "note": "Clés saisies uniquement sur la page Banques par l'utilisateur ; jamais dans le chat ni dans le contexte du modèle.",
+    }
+
+
+def _brands_brief() -> list[dict]:
+    from .. import brands as brands_mod
+
+    return brands_mod.list_brands()
 
 
 def _batch_fields() -> list[dict]:
@@ -373,6 +396,19 @@ def _prompt_lines(manifest: dict, max_chars: int = 6000) -> list[str]:
         for t in manifest["templates"]
     )
     lines.append(f"- Modèles de la bibliothèque : {templates or 'aucun'}.")
+    sources_state = manifest["content_sources"]
+    lines.append(
+        f"- Banques de contenu : {sources_state['configured']} clé(s) enregistrée(s), "
+        f"{sources_state['ready']} prête(s) sur {len(sources_state['providers'])} fournisseurs "
+        "(get_sources_state ; test/activation = actions confirmées). Les clés ne se saisissent QUE sur la page Banques, jamais dans le chat."
+    )
+    brands = "; ".join(
+        f"{b['id']}=« {b['label']} »" for b in manifest["brands"] if not b.get("unreadable")
+    )
+    lines.append(
+        f"- Packs marque : {brands or 'aucun'}. Appliquer au projet = brand_apply (proposition validée) ; "
+        "capturer le style du projet = brand_capture."
+    )
     comps = "; ".join(
         f"{m['id']} -> composition « {m['composition']} » (éditable : {', '.join(m['editable'][:8])}…)"
         for m in models

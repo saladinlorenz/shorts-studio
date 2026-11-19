@@ -27,6 +27,7 @@ web/public/media-cache/
 
 # --- Réglages et clés API (NE JAMAIS être poussés) --------------------
 server/settings.json
+server/sources.json
 *.env
 .env.*
 
