@@ -68,6 +68,21 @@
         { "weight": 500, "style": "normal", "file": "Space_Grotesk-500.ttf" },
         { "weight": 700, "style": "normal", "file": "Space_Grotesk-700.ttf" }
       ]
+    },
+    {
+      "id": "noto-sans-arabic",
+      "css_family": "Noto Sans Arabic",
+      "label": "Noto Sans Arabic — arabe RTL (OFL)",
+      "role": "sans",
+      "scripts": ["arabic"],
+      "license": "SIL Open Font License 1.1",
+      "license_file": "web/public/fonts/licenses/noto-sans-arabic/OFL.txt",
+      "source": "https://fonts.google.com/specimen/Noto+Sans+Arabic",
+      "retrieved": "2026-11-19",
+      "weights": [
+        { "weight": 400, "style": "normal", "file": "NotoSansArabic-400.ttf" },
+        { "weight": 700, "style": "normal", "file": "NotoSansArabic-700.ttf" }
+      ]
     }
   ]
 }

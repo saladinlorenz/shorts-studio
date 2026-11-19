@@ -19,14 +19,12 @@ import { ErrorNote, JobStatus } from "../components/job-status";
 /**
  * Section « Montage footage » autonome.
  *
- * Un éditeur d'EDL (edit decision list) qui réutilise strictement les routes
- * existantes : POST /api/montage/validate (contrôle sans écriture, erreurs
- * indexées) et POST /api/montage (rendu FFmpeg en job). Aucune source distante :
- * les plans ne référencent que des rushes déjà ingérés media://<id>, choisis
- * dans la médiathèque. Le moteur est shortvideos/timeline.py, pas Remotion.
+ * Un éditeur d'EDL fermé (edit decision list) : POST /api/montage/validate et
+ * POST /api/montage (rendu FFmpeg en job avec vitesse, loudnorm et sous-titres
+ * incrustés). Aucune source distante : les plans ne référencent que des rushes
+ * déjà ingérés media://, choisis dans la médiathèque.
  */
 
-// Vocabulaire fermé — miroir de shortvideos/edl.py.
 const ROLES = ["hook", "body", "broll", "quote", "detail", "transition", "end"] as const;
 const TRANSITIONS = ["cut", "fade", "dissolve", "wipeleft", "slideup"] as const;
 const GRADES = ["none", "warm", "cool", "sepia", "mono", "teal_orange"] as const;
@@ -41,6 +39,7 @@ interface CutState {
   media: string;
   in: number;
   out: number;
+  speed: number;
   role: string;
   transitionType: string;
   transitionDuration: number;
@@ -49,12 +48,30 @@ interface CutState {
 const MAX_CUTS = 80;
 
 function newCut(media: string): CutState {
-  return { media, in: 0, out: 5, role: "body", transitionType: "cut", transitionDuration: 0.5 };
+  return { media, in: 0, out: 5, speed: 1, role: "body", transitionType: "cut", transitionDuration: 0.5 };
 }
 
 function toNumber(value: string): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function parseSubtitleCues(raw: string): Array<{ start: number; end: number; text: string }> {
+  const cues: Array<{ start: number; end: number; text: string }> = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const m = trimmed.match(/^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*[|:]\s*(.+)$/);
+    if (m) {
+      const start = Number(m[1]);
+      const end = Number(m[2]);
+      const text = m[3].trim();
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start && text) {
+        cues.push({ start, end, text });
+      }
+    }
+  }
+  return cues;
 }
 
 export default function MontagePage() {
@@ -69,6 +86,12 @@ export default function MontagePage() {
   const [duck, setDuck] = React.useState(true);
   const [fadeIn, setFadeIn] = React.useState(1);
   const [fadeOut, setFadeOut] = React.useState(2);
+  const [loudnorm, setLoudnorm] = React.useState(true);
+  const [subtitlesEnabled, setSubtitlesEnabled] = React.useState(false);
+  const [subtitlesPosition, setSubtitlesPosition] = React.useState<"bottom" | "center">("bottom");
+  const [subtitlesFontSize, setSubtitlesFontSize] = React.useState(44);
+  const [subtitlesColor, setSubtitlesColor] = React.useState("#ffffff");
+  const [cuesText, setCuesText] = React.useState("0.0-2.5 | L'accroche de votre vidéo\n2.5-5.0 | Le message clé");
   const [gradeLook, setGradeLook] = React.useState<string>("none");
   const [saturation, setSaturation] = React.useState(1);
   const [contrast, setContrast] = React.useState(1);
@@ -105,20 +128,54 @@ export default function MontagePage() {
       media: c.media,
       in: c.in,
       out: c.out,
+      speed: c.speed,
       role: c.role,
       transition: {
         type: c.transitionType,
         duration: c.transitionType === "cut" ? 0 : c.transitionDuration,
       },
     }));
+    const cues = subtitlesEnabled ? parseSubtitleCues(cuesText) : [];
     return {
       version: 1,
       canvas,
       cuts: edlCuts,
-      audio: music ? { music, gain_db: gainDb, duck, fade_in: fadeIn, fade_out: fadeOut } : {},
+      audio: {
+        ...(music ? { music, gain_db: gainDb, duck, fade_in: fadeIn, fade_out: fadeOut } : {}),
+        loudnorm,
+      },
       grade: { look: gradeLook, saturation, contrast },
+      subtitles: subtitlesEnabled
+        ? {
+            enabled: true,
+            burn_in: true,
+            style: {
+              font_size: subtitlesFontSize,
+              color: subtitlesColor,
+              position: subtitlesPosition,
+            },
+            cues,
+          }
+        : { enabled: false, burn_in: false },
     };
-  }, [cuts, canvas, music, gainDb, duck, fadeIn, fadeOut, gradeLook, saturation, contrast]);
+  }, [
+    cuts,
+    canvas,
+    music,
+    gainDb,
+    duck,
+    fadeIn,
+    fadeOut,
+    loudnorm,
+    subtitlesEnabled,
+    subtitlesPosition,
+    subtitlesFontSize,
+    subtitlesColor,
+    cuesText,
+    gradeLook,
+    saturation,
+    contrast,
+  ]);
 
   const updateCut = (index: number, patch: Partial<CutState>) => {
     touch();
@@ -294,6 +351,17 @@ export default function MontagePage() {
                     </select>
                   </label>
                   <label className="block">
+                    <span className="field-label">vitesse (×)</span>
+                    <Input
+                      type="number"
+                      min={0.25}
+                      max={4}
+                      step={0.25}
+                      value={cut.speed}
+                      onChange={(e) => updateCut(index, { speed: Math.max(0.25, Math.min(4, toNumber(e.target.value) || 1)) })}
+                    />
+                  </label>
+                  <label className="block">
                     <span className="field-label">transition vers ce plan</span>
                     <select
                       className="input-base"
@@ -442,6 +510,85 @@ export default function MontagePage() {
                     onCheckedChange={(v) => {
                       touch();
                       setDuck(v);
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+            <label className="mt-3 flex items-center justify-between gap-2">
+              <span className="field-label">normalisation audio (−14 LUFS)</span>
+              <Switch
+                checked={loudnorm}
+                onCheckedChange={(v) => {
+                  touch();
+                  setLoudnorm(v);
+                }}
+              />
+            </label>
+          </div>
+
+          <div className="panel p-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="panel-title">Sous-titres incrustés</div>
+              <Switch
+                checked={subtitlesEnabled}
+                onCheckedChange={(v) => {
+                  touch();
+                  setSubtitlesEnabled(v);
+                }}
+              />
+            </div>
+            {subtitlesEnabled && (
+              <div className="mt-3 flex flex-col gap-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="field-label">position</span>
+                    <select
+                      className="input-base"
+                      value={subtitlesPosition}
+                      onChange={(e) => {
+                        touch();
+                        setSubtitlesPosition(e.target.value === "center" ? "center" : "bottom");
+                      }}
+                    >
+                      <option value="bottom">Bas</option>
+                      <option value="center">Centre</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="field-label">taille (px)</span>
+                    <Input
+                      type="number"
+                      min={18}
+                      max={96}
+                      step={2}
+                      value={subtitlesFontSize}
+                      onChange={(e) => {
+                        touch();
+                        setSubtitlesFontSize(Math.max(18, Math.min(96, toNumber(e.target.value) || 44)));
+                      }}
+                    />
+                  </label>
+                </div>
+                <label className="block">
+                  <span className="field-label">couleur</span>
+                  <Input
+                    type="text"
+                    value={subtitlesColor}
+                    onChange={(e) => {
+                      touch();
+                      setSubtitlesColor(e.target.value);
+                    }}
+                  />
+                </label>
+                <label className="block">
+                  <span className="field-label">répliques (début-fin | texte)</span>
+                  <textarea
+                    className="input-base min-h-[76px] w-full font-mono text-[11px]"
+                    value={cuesText}
+                    onChange={(e) => {
+                      touch();
+                      setCuesText(e.target.value);
                     }}
                   />
                 </label>

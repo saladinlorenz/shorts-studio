@@ -35,7 +35,8 @@ const CLOUD_WARNING: Record<string, string> = {
 };
 
 const LOCAL_PRESETS = [
-  { url: "http://127.0.0.1:8900/v1", label: "llama.cpp (moteur)" },
+  { url: "http://127.0.0.1:8080/v1", label: "llama.cpp (8080)" },
+  { url: "http://127.0.0.1:8900/v1", label: "llama.cpp (8900)" },
   { url: "http://127.0.0.1:8080/api/agent/v1", label: "Local Chat (relais)" },
 ];
 

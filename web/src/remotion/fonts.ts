@@ -106,7 +106,8 @@ export async function loadFontsFor(
     const key = `${weight} ${sampleSizePx}px ${css}`;
     if (loadedRequests.has(key)) return null;
     loadedRequests.add(key);
-    return document.fonts.load(key, "éàçùÆ”“— 0123456789");
+    const sample = family === "noto-sans-arabic" ? "أبجد هوز حطي كلمن" : "éàçùÆ”“— 0123456789";
+    return document.fonts.load(key, sample);
   });
   await Promise.all(jobs.filter(Boolean));
   await document.fonts.ready;

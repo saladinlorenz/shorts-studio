@@ -140,9 +140,14 @@ export default function AutopilotTracker({ planId, notify }: Props) {
           <li key={step.id} className="rounded border border-border/60 bg-muted/20 px-1.5 py-1">
             <div className="flex items-center gap-1.5 text-[11px]">
               <StepIcon status={step.status} />
-              <span className={step.status === "pending" ? "text-muted-foreground" : "font-medium"}>
+              <span className={step.status === "pending" || step.status === "skipped" ? "text-muted-foreground" : "font-medium"}>
                 {step.label}
               </span>
+              {step.status === "skipped" && (
+                <Badge variant="outline" className="ml-auto text-[9px] text-muted-foreground">
+                  ignorée
+                </Badge>
+              )}
             </div>
             {step.status === "failed" && step.error ? (
               <p className="mt-0.5 pl-5 text-[10px] leading-snug text-destructive">{step.error}</p>

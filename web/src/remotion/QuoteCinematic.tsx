@@ -297,7 +297,7 @@ const TextLayerView: React.FC<{
   const content = fx.decorate ? fx.decorate(body) : body;
 
   return (
-    <div style={boxStyle} data-probe={`${sceneCtx.uid}/${layer.id}`} data-probe-kind="text"
+    <div style={boxStyle} dir={resolved.direction} data-probe={`${sceneCtx.uid}/${layer.id}`} data-probe-kind="text"
       data-probe-steady={frame >= resolved.in_end_frame && frame < resolved.out_start_frame}>
       <div ref={contentRef} style={fxBox(fx)}>
         {content}

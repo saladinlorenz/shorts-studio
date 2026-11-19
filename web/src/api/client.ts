@@ -366,6 +366,54 @@ export interface AgentStatus {
     not_available: string[];
     knowledge_sources: Array<{ id: string; title: string; version: string }>;
   };
+  budget?: AgentBudgetState;
+}
+
+export interface AgentBudgetState {
+  stopped: boolean;
+  stop_reason: string;
+  stopped_at: string;
+  window_seconds: number;
+  limits: {
+    auto_confirms_per_hour: number;
+    llm_calls_per_hour: number;
+    exports_per_hour: number;
+    autopilot_runs_per_hour: number;
+  };
+  used: {
+    auto_confirms: number;
+    llm_calls: number;
+    exports: number;
+    autopilot_runs: number;
+  };
+  remaining: {
+    auto_confirms: number;
+    llm_calls: number;
+    exports: number;
+    autopilot_runs: number;
+  };
+  allowlist: string[];
+  manual_only: string[];
+}
+
+export interface AgentLogEntry {
+  ts: string;
+  event: string;
+  actor: "user" | "auto" | "system";
+  action?: string;
+  proposal_id?: string;
+  job_id?: string;
+  status?: string;
+  detail?: Record<string, unknown>;
+}
+
+export interface CopywritingBlock {
+  title: string;
+  description: string;
+  hashtags: string[];
+  hook_lines: string[];
+  cta: string;
+  language: string;
 }
 
 export interface CheckReport {
@@ -409,7 +457,8 @@ export interface Proposal {
     | "library_save"
     | "batch_plan"
     | "autopilot_plan"
-    | "studio_action";
+    | "studio_action"
+    | "copywriting";
   summary: string;
   status: string;
   expires_at?: number;
@@ -424,6 +473,7 @@ export interface Proposal {
   errors?: string[];
   validation?: { state: string; errors: string[]; warnings: string[] };
   candidate?: Project;
+  copywriting?: CopywritingBlock;
   library?: { label: string; description: string };
   batch?: {
     model: string;
@@ -525,6 +575,7 @@ export interface AcceptResult {
   rebuilt?: boolean;
   warnings?: string[];
   changes?: ProposalChange[];
+  copywriting?: CopywritingBlock;
   library?: { label: string; description: string };
   batch?: Proposal["batch"];
 }
@@ -1123,6 +1174,18 @@ export const api = {
   autopilotFormatUrl: (jobId: string, name: string) =>
     `/api/agent/autopilot/${encodeURIComponent(jobId)}/format/${encodeURIComponent(name)}`,
 
+  // P9 Garde-fous : arrêt global, budgets, journal JSONL
+  agentStop: (reason?: string) =>
+    request<{ stopped: boolean; reason: string; stopped_at: string; cancelled_jobs: number; budget: AgentBudgetState }>(
+      "/api/agent/stop",
+      { method: "POST", body: JSON.stringify({ reason }) },
+    ),
+  agentResume: () =>
+    request<{ resumed: boolean; budget: AgentBudgetState }>("/api/agent/resume", { method: "POST" }),
+  agentBudget: () => request<AgentBudgetState>("/api/agent/budget"),
+  agentLogs: (limit = 30) =>
+    request<{ entries: AgentLogEntry[] }>(`/api/agent/logs?limit=${encodeURIComponent(String(limit))}`),
+
   deliveryStatus: (batchId: string) =>
     request<DeliveryStatus>(`/api/delivery/${encodeURIComponent(batchId)}`),
   deliveryPackage: (batchId: string) =>
@@ -1281,25 +1344,39 @@ export interface EdlTransition {
   duration: number;
 }
 
-/** Un plan du montage : un rush media://, de in à out, avec son rôle et sa transition. */
+/** Un plan du montage : un rush media://, de in à out, vitesse optionnelle, rôle et transition. */
 export interface EdlCut {
   media: string;
   in: number;
   out: number;
+  speed?: number;
   role: string;
   reason?: string;
   transition: EdlTransition;
 }
 
-/** Contrat EDL du montage footage (shortvideos/edl.py). */
+/** Sous-titres incrustés optionnels d'un montage EDL (P5). */
+export interface EdlSubtitles {
+  enabled: boolean;
+  burn_in: boolean;
+  style?: {
+    font_size?: number;
+    color?: string;
+    position?: "bottom" | "center";
+  };
+  cues?: Array<{ start: number; end: number; text: string }>;
+}
+
+/** Contrat EDL fermé du montage footage (P5). */
 export interface Edl {
   version: number;
   canvas: { width: number; height: number; fps: number };
   cuts: EdlCut[];
   audio:
-    | { music?: string; gain_db?: number; duck?: boolean; fade_in?: number; fade_out?: number }
+    | { music?: string; gain_db?: number; duck?: boolean; fade_in?: number; fade_out?: number; loudnorm?: boolean }
     | Record<string, never>;
   grade: { look: string; saturation: number; contrast: number };
+  subtitles?: EdlSubtitles;
 }
 
 /** Réponse de POST /api/montage/validate : contrôle sans écriture. */

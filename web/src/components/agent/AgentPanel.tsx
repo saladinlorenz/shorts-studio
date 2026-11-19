@@ -1,10 +1,12 @@
 import React from "react";
-import { BrainCircuit, Loader2, Rocket, Send, Sparkles, Square, Undo2 } from "lucide-react";
+import { BrainCircuit, FileText, Loader2, OctagonAlert, Play, Rocket, Send, Sparkles, Square, Undo2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import {
   api,
   apiErrorMessage,
+  type AgentBudgetState,
+  type AgentLogEntry,
   type AgentRun,
   type AgentStatus,
   type Proposal,
@@ -108,6 +110,10 @@ export default function AgentPanel({
   const [actionRun, setActionRun] = React.useState<AgentRun | null>(null);
   const [launching, setLaunching] = React.useState(false);
   const [launchError, setLaunchError] = React.useState("");
+  const [budget, setBudget] = React.useState<AgentBudgetState | null>(null);
+  const [logsOpen, setLogsOpen] = React.useState(false);
+  const [logs, setLogs] = React.useState<AgentLogEntry[]>([]);
+  const [stoppingAll, setStoppingAll] = React.useState(false);
   const actionLock = React.useRef(false);
   const observedActions = React.useRef(new Set<string>());
   const { job, pollError } = useJobPolling(jobId, 500);
@@ -127,15 +133,30 @@ export default function AgentPanel({
 
   const refreshStatus = React.useCallback(async () => {
     try {
-      setStatus(await api.agentStatus());
+      const [st, b] = await Promise.all([api.agentStatus(), api.agentBudget()]);
+      setStatus(st);
+      setBudget(b);
     } catch (e) {
       setError(apiErrorMessage(e));
+    }
+  }, []);
+
+  const refreshLogs = React.useCallback(async () => {
+    try {
+      const res = await api.agentLogs(25);
+      setLogs(res.entries);
+    } catch {
+      // ignore non-fatal log fetch errors
     }
   }, []);
 
   React.useEffect(() => {
     if (visible !== false) void refreshStatus();
   }, [visible, refreshStatus]);
+
+  React.useEffect(() => {
+    if (logsOpen) void refreshLogs();
+  }, [logsOpen, refreshLogs]);
 
   /* ----------------------- application automatique ----------------------- */
 
@@ -238,7 +259,7 @@ export default function AgentPanel({
         notify(applyHint, "info");
         return;
       }
-      if (proposal.type === "project_patch" || proposal.type === "project_new" || proposal.type === "library_save" || proposal.type === "batch_plan") {
+      if (proposal.type === "project_patch" || proposal.type === "project_new" || proposal.type === "library_save" || proposal.type === "batch_plan" || (proposal.type === "copywriting" && proposal.has_candidate)) {
         void acceptProposal(target, false);
       } else if (proposal.type === "studio_action" && proposal.action?.confirmation
                  && proposal.action.name !== "image_generate") {
@@ -247,8 +268,9 @@ export default function AgentPanel({
       } else if (proposal.type === "autopilot_plan") {
         void startAutopilotFor(target);
       }
+      void refreshStatus();
     },
-    [applyHint, acceptProposal, executeActionFor, startAutopilotFor, notify],
+    [applyHint, acceptProposal, executeActionFor, startAutopilotFor, notify, refreshStatus],
   );
 
   /* --------------------------- suivi des jobs --------------------------- */
@@ -376,13 +398,43 @@ export default function AgentPanel({
     }
   };
 
+  const globalStop = async () => {
+    setStoppingAll(true);
+    try {
+      const res = await api.agentStop();
+      setBudget(res.budget);
+      setJobId(null);
+      setActionJobId(null);
+      notify(`Arrêt global activé (${res.cancelled_jobs} tâche(s) annulée(s)).`, "info");
+      if (logsOpen) void refreshLogs();
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setStoppingAll(false);
+    }
+  };
+
+  const globalResume = async () => {
+    setStoppingAll(true);
+    try {
+      const res = await api.agentResume();
+      setBudget(res.budget);
+      notify("Assistant réactivé.", "ok");
+      if (logsOpen) void refreshLogs();
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setStoppingAll(false);
+    }
+  };
+
   const ready = status?.ready;
   const provider = status?.provider || "local";
   const proposal = run?.proposal;
   const changes = proposal?.changes || [];
   const warnings = proposal?.warnings || [];
   const validationErrors = proposal?.validation?.errors || [];
-  const isProjectChange = proposal?.type === "project_patch" || proposal?.type === "project_new";
+  const isProjectChange = proposal?.type === "project_patch" || proposal?.type === "project_new" || (proposal?.type === "copywriting" && proposal?.has_candidate);
   const imageActionPending =
     proposal?.type === "studio_action" &&
     proposal.action?.name === "image_generate" &&
@@ -401,11 +453,11 @@ export default function AgentPanel({
           title="Recharger l'état de l'assistant"
         >
           <BrainCircuit size={11} />
-          {PROVIDER_LABEL[provider] || provider} · {status?.model || "aucun modèle"}
+          {PROVIDER_LABEL[provider] || provider} · {status?.model || "local"}
         </button>
       </div>
 
-      <div className="mb-1.5 flex gap-1">
+      <div className="mb-1.5 flex flex-wrap items-center gap-1">
         <button
           className={
             "flex h-6 items-center gap-1 rounded-md px-2 text-[11px] " +
@@ -421,11 +473,87 @@ export default function AgentPanel({
             (autopilot ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")
           }
           onClick={() => setAutopilot(true)}
-          title="Une vidéo complète : script, design, voix off, export — démarrée automatiquement."
+          title="Une vidéo complète : script, design, media, voix, export, QC, métadonnées."
         >
           <Rocket size={11} /> Autopilote
         </button>
+        <button
+          className={
+            "ml-auto flex h-6 items-center gap-1 rounded-md border px-1.5 text-[10px] " +
+            (logsOpen ? "border-primary text-primary" : "border-border text-muted-foreground hover:text-foreground")
+          }
+          onClick={() => setLogsOpen((v) => !v)}
+          title="Afficher le journal des actions (logs/)"
+        >
+          <FileText size={10} /> Logs
+        </button>
+        {budget?.stopped ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-6 gap-1 px-2 text-[10px]"
+            onClick={globalResume}
+            disabled={stoppingAll}
+            title="Réactiver l'assistant après un arrêt global"
+          >
+            <Play size={10} /> Reprendre
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="destructive"
+            className="h-6 gap-1 px-2 text-[10px]"
+            onClick={globalStop}
+            disabled={stoppingAll}
+            title="Arrêt global immédiat : coupe toutes les tâches, lots et autopilotes"
+          >
+            <OctagonAlert size={10} /> Tout arrêter
+          </Button>
+        )}
       </div>
+
+      {budget && (
+        <div className="mb-1.5 flex flex-wrap items-center gap-1.5 rounded border border-border/60 bg-muted/20 px-2 py-1 text-[10px] text-muted-foreground">
+          <span>
+            Auto: <strong className="text-foreground">{budget.used.auto_confirms}/{budget.limits.auto_confirms_per_hour}</strong>
+          </span>
+          <span>·</span>
+          <span>
+            Exports: <strong className="text-foreground">{budget.used.exports}/{budget.limits.exports_per_hour}</strong>
+          </span>
+          <span>·</span>
+          <span>
+            Autopilote: <strong className="text-foreground">{budget.used.autopilot_runs}/{budget.limits.autopilot_runs_per_hour}</strong>
+          </span>
+          {budget.stopped && (
+            <Badge variant="destructive" className="ml-auto text-[9px]">Arrêt global actif</Badge>
+          )}
+        </div>
+      )}
+
+      {logsOpen && (
+        <div className="mb-1.5 max-h-36 overflow-y-auto rounded border border-border bg-muted/20 p-1.5 font-mono text-[10px]">
+          <div className="mb-1 flex items-center justify-between text-muted-foreground">
+            <span>Journal logs/ ({logs.length})</span>
+            <button className="underline hover:text-foreground" onClick={refreshLogs}>Actualiser</button>
+          </div>
+          {logs.length === 0 ? (
+            <p className="text-muted-foreground">Aucune entrée récente.</p>
+          ) : (
+            <ul className="space-y-0.5">
+              {logs.map((entry, idx) => (
+                <li key={idx} className="break-all">
+                  <span className="text-muted-foreground">{entry.ts.slice(11, 19)}</span>{" "}
+                  <span className="font-semibold">{entry.event}</span>{" "}
+                  <span className="text-muted-foreground">[{entry.actor}]</span>
+                  {entry.action ? ` ${entry.action}` : ""}
+                  {entry.status ? ` (${entry.status})` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {!ready && (
         <div className="mb-1.5 rounded border border-warning/40 bg-warning/10 px-2 py-1 text-[11px] text-warning">
@@ -563,6 +691,33 @@ export default function AgentPanel({
                   ))}
                 </ul>
                 {proposal.batch.notes && <p className="text-muted-foreground">{proposal.batch.notes}</p>}
+              </div>
+            )}
+
+            {proposal.type === "copywriting" && proposal.copywriting && (
+              <div className="space-y-1.5 rounded border border-border/60 bg-muted/20 p-2 text-[11px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-foreground">Copywriting validé</span>
+                  <Badge variant="outline" className="text-[9px] uppercase">{proposal.copywriting.language}</Badge>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground">Titre</span>
+                  <p className="font-medium">{proposal.copywriting.title}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground">Description</span>
+                  <p className="whitespace-pre-wrap text-muted-foreground">{proposal.copywriting.description}</p>
+                </div>
+                {proposal.copywriting.cta && (
+                  <p className="text-[10px]"><span className="text-muted-foreground">CTA :</span> {proposal.copywriting.cta}</p>
+                )}
+                {proposal.copywriting.hashtags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {proposal.copywriting.hashtags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-[10px]">{tag}</Badge>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

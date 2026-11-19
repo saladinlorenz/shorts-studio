@@ -60,6 +60,15 @@ export const MODEL_REGISTRY: Record<string, ModelDefinition> = {
     defaultProps: { project: null },
     dims: studioDims,
   },
+  quote_horizontal: {
+    id: "quote_horizontal",
+    compositionId: "quote-horizontal",
+    label: "Citation horizontale (16:9)",
+    version: 1,
+    component: QuoteCinematic as unknown as React.ComponentType<Record<string, unknown>>,
+    defaultProps: { project: null },
+    dims: studioDims,
+  },
   quote_vertical: {
     id: "quote_vertical",
     compositionId: "quote-vertical",

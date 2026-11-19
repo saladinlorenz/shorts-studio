@@ -205,6 +205,27 @@ export default function ActionTracker({ proposal, jobId, job, pollError, launchE
           Le LLM ne voit pas les images : mesures DOM et logs sur quelques frames seulement. Le contraste sur média, les masques et le mouvement complet restent à vérifier par une personne.
         </p>
       )}
+      {proposal.action?.name === "project_check_render" && job?.status === "done" && record(result?.report) && (
+        <div className="space-y-1 rounded border border-border/60 bg-muted/20 p-1.5 text-[11px]">
+          <Badge variant={result?.verified === true ? "success" : "destructive"} className="text-[10px]">
+            {result?.verified === true ? "check_render · conforme" : "check_render · anomalies"}
+          </Badge>
+          {Array.isArray(record(result?.report)?.warnings) && (record(result?.report)?.warnings as unknown[]).length > 0 && (
+            <ul className="list-inside list-disc space-y-0.5 text-warning">
+              {(record(result?.report)?.warnings as unknown[]).slice(0, 6).map((w, i) => (
+                <li key={i}>{readableText(String(w), 240)}</li>
+              ))}
+            </ul>
+          )}
+          {Array.isArray(record(result?.report)?.errors) && (record(result?.report)?.errors as unknown[]).length > 0 && (
+            <ul className="list-inside list-disc space-y-0.5 text-destructive">
+              {(record(result?.report)?.errors as unknown[]).slice(0, 6).map((err, i) => (
+                <li key={i}>{readableText(String(err), 240)}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {proposal.action?.name === "project_review" && job?.status === "done" && (
         <p className="text-muted-foreground">
           {reviewProposal(job.result) ? "Corrections proposées, jamais appliquées automatiquement : utilisez l'aperçu puis Appliquer dans l'éditeur."
